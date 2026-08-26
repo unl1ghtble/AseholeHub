@@ -1,14 +1,12 @@
 -- ============================================================
--- ASEHOLE HUB
--- Auto Use / Auto Prompts / Stamina Rest / Auto Eat
--- Anti Fatigue / Anti AFK / Stats / Discord Webhook
+-- ASEHOLE HUB v1.2.0
 -- ============================================================
 
 -- ============================
 -- CONFIG
 -- ============================
 
-local HUB_VERSION = "1.1.0"
+local HUB_VERSION = "1.2.0"
 
 local DEFAULT_TOOL_NAME = "Boxing Gloves"
 
@@ -32,62 +30,44 @@ local TARGET_STATS = {
 }
 
 local DEFAULT_STAT_REFRESH_RATE = 0.2
+
 local AUTO_EAT_PERCENT = 10
+local AUTO_EAT_TARGET_PERCENT = 100
+local FOOD_CONFIRM_TIMEOUT = 5
+local MAX_FOOD_CONFIRM_FAILURES = 3
+
 local ANTI_FATIGUE_PERCENT = 90
 
 -- ============================
 -- SERVICES
 -- ============================
 
-local Players =
-    game:GetService("Players")
+local Players = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
 
-local ProximityPromptService =
-    game:GetService("ProximityPromptService")
-
-local VirtualInputManager =
-    game:GetService("VirtualInputManager")
-
-local VirtualUser =
-    game:GetService("VirtualUser")
-
-local HttpService =
-    game:GetService("HttpService")
-
-local player =
-    Players.LocalPlayer
+local player = Players.LocalPlayer
 
 -- ============================
 -- GUI PATHS
 -- ============================
 
-local PlayerGui =
-    player:WaitForChild("PlayerGui")
+local PlayerGui = player:WaitForChild("PlayerGui")
+local HUD = PlayerGui:WaitForChild("HUD")
 
-local HUD =
-    PlayerGui:WaitForChild("HUD")
+local Tabs = HUD:WaitForChild("Tabs")
+local StatsChecker = Tabs:WaitForChild("StatsChecker")
 
-local Tabs =
-    HUD:WaitForChild("Tabs")
-
-local StatsChecker =
-    Tabs:WaitForChild("StatsChecker")
-
-local Bars =
-    HUD:WaitForChild("Bars")
-
-local MainHUD =
-    Bars:WaitForChild("MainHUD")
+local Bars = HUD:WaitForChild("Bars")
+local MainHUD = Bars:WaitForChild("MainHUD")
 
 local FatigueStaminaText =
-    MainHUD:WaitForChild(
-        "FatigueStamina"
-    )
+    MainHUD:WaitForChild("FatigueStamina")
 
 local HungerDisplayText =
-    MainHUD:WaitForChild(
-        "HungerDisplay"
-    )
+    MainHUD:WaitForChild("HungerDisplay")
 
 -- ============================
 -- RAYFIELD
@@ -100,206 +80,96 @@ local Rayfield =
         )
     )()
 
-local Window =
-    Rayfield:CreateWindow({
+local Window = Rayfield:CreateWindow({
+    Name = "Asehole hub | v" .. HUB_VERSION,
+    LoadingTitle = "Asehole hub",
+    LoadingSubtitle = "Utilities • v" .. HUB_VERSION,
 
-        Name =
-            "Asehole hub | v"
-            .. HUB_VERSION,
-
-        LoadingTitle =
-            "Asehole hub",
-
-        LoadingSubtitle =
-            "Utilities • v"
-            .. HUB_VERSION,
-
-        ConfigurationSaving = {
-            Enabled = false
-        },
-    })
+    ConfigurationSaving = {
+        Enabled = false
+    },
+})
 
 local AutoUseTab =
-    Window:CreateTab(
-        "Auto Use",
-        4483362458
-    )
+    Window:CreateTab("Auto Use", 4483362458)
 
 local PromptTab =
-    Window:CreateTab(
-        "Auto Prompts",
-        4483362458
-    )
+    Window:CreateTab("Auto Prompts", 4483362458)
 
 local StatsTab =
-    Window:CreateTab(
-        "Stats",
-        4483362458
-    )
+    Window:CreateTab("Stats", 4483362458)
 
 local WebhookTab =
-    Window:CreateTab(
-        "Webhook",
-        4483362458
-    )
+    Window:CreateTab("Webhook", 4483362458)
 
 -- ============================================================
 -- STATE
 -- ============================================================
 
--- ============================
--- AUTO USE
--- ============================
+-- Auto Use
+local autoUseEnabled = false
+local targetToolName = DEFAULT_TOOL_NAME
+local autoUseThread = nil
 
-local autoUseEnabled =
-    false
+-- Prompts
+local autoPromptEnabled = false
+local autoKeyPromptEnabled = false
+local autoDelayedKeyPromptEnabled = false
+local delayedKeyPromptDelay = 0.8
 
-local targetToolName =
-    DEFAULT_TOOL_NAME
-
-local autoUseThread =
-    nil
-
--- ============================
--- PROMPTS
--- ============================
-
-local autoPromptEnabled =
-    false
-
-local autoKeyPromptEnabled =
-    false
-
-local autoDelayedKeyPromptEnabled =
-    false
-
-local delayedKeyPromptDelay =
-    0.8
-
--- ============================
--- INSTANT PROMPTS
--- ============================
-
-local instantHoldPromptsEnabled =
-    false
+-- Instant prompts
+local instantHoldPromptsEnabled = false
 
 local originalHoldDurations =
-    setmetatable(
-        {},
-        {
-            __mode = "k"
-        }
-    )
+    setmetatable({}, {
+        __mode = "k"
+    })
 
--- ============================
--- STATS
--- ============================
+-- Stats
+local statAutoRefreshEnabled = true
+local statRefreshRate = DEFAULT_STAT_REFRESH_RATE
 
-local statAutoRefreshEnabled =
-    true
+-- Stamina Rest
+local autoStaminaRestEnabled = false
+local staminaStopPercent = 30
+local staminaResumePercent = 80
+local staminaRestActive = false
 
-local statRefreshRate =
-    DEFAULT_STAT_REFRESH_RATE
+-- Auto Eat
+local autoEatEnabled = false
+local customFoodNames = ""
 
--- ============================
--- STAMINA REST
--- ============================
+local autoEatSessionActive = false
+local autoEatWorkerRunning = false
+local autoEatInProgress = false
 
-local autoStaminaRestEnabled =
-    false
+-- When true, Auto Eat will ignore the current
+-- low-hunger event until hunger goes above 10%.
+local hungerLowHandled = false
 
-local staminaStopPercent =
-    30
+local AutoEatStatusText = "OFF"
 
-local staminaResumePercent =
-    80
+-- Anti Fatigue
+local antiFatigueEnabled = false
+local antiFatigueActive = false
+local lastSleepAttempt = 0
+local AntiFatigueStatusText = "OFF"
 
-local staminaRestActive =
-    false
+-- Anti AFK
+local antiAfkEnabled = false
 
--- ============================
--- AUTO EAT
--- ============================
+-- Discord
+local discordFatigueAlertEnabled = false
+local discordWebhookUrl = ""
+local discordUserId = ""
 
-local autoEatEnabled =
-    false
+local fatigueWebhookSent = false
+local fatigueRecoveryArmed = false
 
-local customFoodNames =
-    ""
-
-local autoEatInProgress =
-    false
-
-local hungerLowHandled =
-    false
-
-local lastFoodAttempt =
-    0
-
--- ============================
--- ANTI FATIGUE
--- ============================
-
-local antiFatigueEnabled =
-    false
-
-local antiFatigueActive =
-    false
-
-local lastSleepAttempt =
-    0
-
--- ============================
--- ANTI AFK
--- ============================
-
-local antiAfkEnabled =
-    false
-
--- ============================
--- DISCORD
--- ============================
-
-local discordFatigueAlertEnabled =
-    false
-
-local discordWebhookUrl =
-    ""
-
-local discordUserId =
-    ""
-
--- Prevent repeat 90% spam
-local fatigueWebhookSent =
-    false
-
--- Becomes armed after a successful
--- 90% fatigue event.
-local fatigueRecoveryArmed =
-    false
-
--- ============================
--- HUD VALUES
--- ============================
-
-local currentStaminaPercent =
-    nil
-
-local currentFatiguePercent =
-    nil
-
-local currentHungerPercent =
-    nil
-
--- ============================
--- STATUS
--- ============================
-
-local AutoEatStatusText =
-    "OFF"
-
-local AntiFatigueStatusText =
-    "OFF"
+-- HUD values
+local currentStaminaPercent = nil
+local currentFatiguePercent = nil
+local currentHungerPercent = nil
 
 -- ============================================================
 -- ANTI AFK
@@ -313,8 +183,7 @@ player.Idled:Connect(function()
 
     pcall(function()
 
-        local camera =
-            workspace.CurrentCamera
+        local camera = workspace.CurrentCamera
 
         if not camera then
             return
@@ -344,10 +213,7 @@ end)
 
 local function findToolByName(name)
 
-    if
-        not name
-        or name == ""
-    then
+    if not name or name == "" then
         return nil
     end
 
@@ -358,9 +224,7 @@ local function findToolByName(name)
         player.Character
 
     local backpack =
-        player:FindFirstChild(
-            "Backpack"
-        )
+        player:FindFirstChild("Backpack")
 
     if character then
 
@@ -370,9 +234,7 @@ local function findToolByName(name)
 
             if
                 item:IsA("Tool")
-                and string.lower(
-                    item.Name
-                ) == wanted
+                and string.lower(item.Name) == wanted
             then
 
                 return item
@@ -390,9 +252,7 @@ local function findToolByName(name)
 
             if
                 item:IsA("Tool")
-                and string.lower(
-                    item.Name
-                ) == wanted
+                and string.lower(item.Name) == wanted
             then
 
                 return item
@@ -426,9 +286,7 @@ local function equipAndActivateTool(tool)
 
     if tool.Parent ~= character then
 
-        humanoid:EquipTool(
-            tool
-        )
+        humanoid:EquipTool(tool)
 
         task.wait(0.12)
 
@@ -446,37 +304,274 @@ end
 local function useToolOnceByName(name)
 
     local tool =
-        findToolByName(
-            name
-        )
+        findToolByName(name)
 
     if not tool then
         return false
     end
 
-    return equipAndActivateTool(
-        tool
-    )
+    return equipAndActivateTool(tool)
 end
 
 -- ============================================================
--- MASTER AUTOMATION GATE
+-- TEXT UTILITIES
+-- ============================================================
+
+local function normalizeName(name)
+
+    return string.lower(
+        tostring(name):gsub(
+            "[%s_%-%.]",
+            ""
+        )
+    )
+
+end
+
+local function isTextObject(obj)
+
+    return
+        obj:IsA("TextLabel")
+        or obj:IsA("TextButton")
+        or obj:IsA("TextBox")
+
+end
+
+local function stripRichText(text)
+
+    if not text then
+        return ""
+    end
+
+    text = tostring(text)
+
+    text =
+        text:gsub(
+            "<[^>]*>",
+            ""
+        )
+
+    text =
+        text:gsub(
+            "[\n\r\t]",
+            " "
+        )
+
+    return text
+end
+
+-- ============================================================
+-- NUMBER PARSER
+-- ============================================================
+
+local function extractNumber(text)
+
+    if not text then
+        return nil
+    end
+
+    local clean =
+        stripRichText(text)
+
+    local valuePart =
+        clean:match(
+            ".*:%s*(.-)%s*$"
+        )
+
+    if
+        not valuePart
+        or valuePart == ""
+    then
+
+        valuePart = clean
+
+    end
+
+    local numberText, suffix =
+        valuePart:match(
+            "([%+%-]?%d[%d,]*%.?%d*)%s*([KkMmBbTt]?)"
+        )
+
+    if not numberText then
+        return nil
+    end
+
+    numberText =
+        numberText:gsub(
+            ",",
+            ""
+        )
+
+    local number =
+        tonumber(numberText)
+
+    if not number then
+        return nil
+    end
+
+    suffix =
+        string.upper(
+            suffix or ""
+        )
+
+    if suffix == "K" then
+
+        number = number * 1e3
+
+    elseif suffix == "M" then
+
+        number = number * 1e6
+
+    elseif suffix == "B" then
+
+        number = number * 1e9
+
+    elseif suffix == "T" then
+
+        number = number * 1e12
+
+    end
+
+    return number
+end
+
+-- ============================================================
+-- STAMINA / FATIGUE
+-- ============================================================
+
+local function extractStaminaAndFatigue(text)
+
+    if not text then
+        return nil, nil
+    end
+
+    local clean =
+        stripRichText(text)
+
+    local staminaText =
+        clean:match(
+            "([%d%.]+)%s*%%"
+        )
+
+    local fatigueText =
+        string.lower(clean):match(
+            "fatigue%s*:%s*([%d%.]+)%s*%%"
+        )
+
+    local stamina =
+        staminaText
+        and tonumber(staminaText)
+        or nil
+
+    local fatigue =
+        fatigueText
+        and tonumber(fatigueText)
+        or nil
+
+    return stamina, fatigue
+end
+
+-- ============================================================
+-- HUNGER
+-- ============================================================
+
+local function extractHunger(text)
+
+    if not text then
+        return nil
+    end
+
+    local clean =
+        stripRichText(text)
+
+    local percentage =
+        clean:match(
+            "([%d%.]+)%s*%%"
+        )
+
+    if percentage then
+        return tonumber(percentage)
+    end
+
+    return extractNumber(clean)
+end
+
+-- ============================================================
+-- HUD TRACKING
+-- ============================================================
+
+local function updateHUDValues()
+
+    if
+        FatigueStaminaText
+        and FatigueStaminaText.Parent
+    then
+
+        local stamina, fatigue =
+            extractStaminaAndFatigue(
+                FatigueStaminaText.Text
+            )
+
+        currentStaminaPercent = stamina
+        currentFatiguePercent = fatigue
+
+    else
+
+        currentStaminaPercent = nil
+        currentFatiguePercent = nil
+
+    end
+
+    if
+        HungerDisplayText
+        and HungerDisplayText.Parent
+    then
+
+        currentHungerPercent =
+            extractHunger(
+                HungerDisplayText.Text
+            )
+
+    else
+
+        currentHungerPercent = nil
+
+    end
+end
+
+-- ============================================================
+-- AUTOMATION GATE
 -- ============================================================
 
 local function canRunAutomation()
 
-    -- Highest priority:
-    -- fatigue recovery
+    -- Anti Fatigue has highest priority
     if antiFatigueActive then
         return false
     end
 
-    -- Eating pauses normal automation
+    -- Entire Auto Eat session pauses everything,
+    -- not just the instant the tool is activated.
+    if autoEatSessionActive then
+        return false
+    end
+
+    -- This closes the small gap between the HUD
+    -- reaching <=10% and the eating worker starting.
+    if
+        autoEatEnabled
+        and currentHungerPercent ~= nil
+        and currentHungerPercent <= AUTO_EAT_PERCENT
+        and not hungerLowHandled
+    then
+
+        return false
+    end
+
     if autoEatInProgress then
         return false
     end
 
-    -- Stamina rest pauses normal automation
     if
         autoStaminaRestEnabled
         and staminaRestActive
@@ -507,9 +602,7 @@ local function equipAndUseTargetTool()
         return
     end
 
-    equipAndActivateTool(
-        tool
-    )
+    equipAndActivateTool(tool)
 end
 
 local function startAutoUse()
@@ -524,9 +617,7 @@ local function startAutoUse()
             while autoUseEnabled do
 
                 if canRunAutomation() then
-
                     equipAndUseTargetTool()
-
                 end
 
                 task.wait(0.1)
@@ -536,12 +627,12 @@ local function startAutoUse()
             autoUseThread = nil
 
         end)
+
 end
 
 local function stopAutoUse()
 
-    autoUseEnabled =
-        false
+    autoUseEnabled = false
 
 end
 
@@ -551,28 +642,18 @@ end
 
 local function makePromptInstant(prompt)
 
-    if not prompt:IsA(
-        "ProximityPrompt"
-    ) then
-
+    if not prompt:IsA("ProximityPrompt") then
         return
     end
 
-    if
-        originalHoldDurations[
-            prompt
-        ] == nil
-    then
+    if originalHoldDurations[prompt] == nil then
 
-        originalHoldDurations[
-            prompt
-        ] =
+        originalHoldDurations[prompt] =
             prompt.HoldDuration
 
     end
 
-    prompt.HoldDuration =
-        0
+    prompt.HoldDuration = 0
 end
 
 local function enableInstantPrompts()
@@ -581,14 +662,8 @@ local function enableInstantPrompts()
         workspace:GetDescendants()
     ) do
 
-        if obj:IsA(
-            "ProximityPrompt"
-        ) then
-
-            makePromptInstant(
-                obj
-            )
-
+        if obj:IsA("ProximityPrompt") then
+            makePromptInstant(obj)
         end
 
     end
@@ -600,101 +675,79 @@ local function disableInstantPrompts()
         originalHoldDurations
     ) do
 
-        if
-            prompt
-            and prompt.Parent
-        then
-
-            prompt.HoldDuration =
-                duration
-
+        if prompt and prompt.Parent then
+            prompt.HoldDuration = duration
         end
 
     end
 
-    table.clear(
-        originalHoldDurations
-    )
+    table.clear(originalHoldDurations)
 end
 
-workspace.DescendantAdded:Connect(
-    function(obj)
+workspace.DescendantAdded:Connect(function(obj)
 
-        if
-            instantHoldPromptsEnabled
-            and obj:IsA(
-                "ProximityPrompt"
-            )
-        then
+    if
+        instantHoldPromptsEnabled
+        and obj:IsA("ProximityPrompt")
+    then
 
-            makePromptInstant(
-                obj
-            )
-
-        end
+        makePromptInstant(obj)
 
     end
-)
+
+end)
 
 -- ============================================================
 -- AUTO PROXIMITY PROMPTS
 -- ============================================================
 
-ProximityPromptService.PromptShown:Connect(
-    function(prompt)
+ProximityPromptService.PromptShown:Connect(function(prompt)
 
-        if instantHoldPromptsEnabled then
+    if instantHoldPromptsEnabled then
+        makePromptInstant(prompt)
+    end
 
-            makePromptInstant(
-                prompt
-            )
+    if not autoPromptEnabled then
+        return
+    end
 
-        end
+    if not canRunAutomation() then
+        return
+    end
 
-        if not autoPromptEnabled then
-            return
-        end
+    task.spawn(function()
 
         if not canRunAutomation() then
             return
         end
 
-        task.spawn(function()
+        local key =
+            prompt.KeyboardKeyCode
 
-            if not canRunAutomation() then
-                return
-            end
+        VirtualInputManager:SendKeyEvent(
+            true,
+            key,
+            false,
+            game
+        )
 
-            local key =
-                prompt.KeyboardKeyCode
+        task.wait(
+            prompt.HoldDuration + 0.05
+        )
 
-            VirtualInputManager:SendKeyEvent(
-                true,
-                key,
-                false,
-                game
-            )
+        VirtualInputManager:SendKeyEvent(
+            false,
+            key,
+            false,
+            game
+        )
 
-            task.wait(
-                prompt.HoldDuration
-                + 0.05
-            )
+    end)
 
-            -- Always release key
-            VirtualInputManager:SendKeyEvent(
-                false,
-                key,
-                false,
-                game
-            )
-
-        end)
-
-    end
-)
+end)
 
 -- ============================================================
--- CUSTOM GUI KEY PROMPTS
+-- CUSTOM KEY PROMPTS
 -- ============================================================
 
 local watchedLabels = {}
@@ -702,16 +755,12 @@ local watchedLabels = {}
 local function getKeyCodeFromChar(char)
 
     char =
-        string.upper(
-            char
-        )
+        string.upper(char)
 
     local success, key =
         pcall(function()
 
-            return Enum.KeyCode[
-                char
-            ]
+            return Enum.KeyCode[char]
 
         end)
 
@@ -743,20 +792,16 @@ local function pressKey(key)
         false,
         game
     )
+
 end
 
 local function watchLabel(label)
 
-    if watchedLabels[
-        label
-    ] then
-
+    if watchedLabels[label] then
         return
     end
 
-    watchedLabels[
-        label
-    ] = true
+    watchedLabels[label] = true
 
     local function tryInstant()
 
@@ -772,26 +817,15 @@ local function watchLabel(label)
             return
         end
 
-        local text =
-            label.Text
+        local text = label.Text
 
-        if
-            text
-            and #text == 1
-        then
+        if text and #text == 1 then
 
             local key =
-                getKeyCodeFromChar(
-                    text
-                )
+                getKeyCodeFromChar(text)
 
             if key then
-
-                task.spawn(
-                    pressKey,
-                    key
-                )
-
+                task.spawn(pressKey, key)
             end
 
         end
@@ -811,18 +845,12 @@ local function watchLabel(label)
             return
         end
 
-        local text =
-            label.Text
+        local text = label.Text
 
-        if
-            text
-            and #text == 1
-        then
+        if text and #text == 1 then
 
             local key =
-                getKeyCodeFromChar(
-                    text
-                )
+                getKeyCodeFromChar(text)
 
             if key then
 
@@ -839,9 +867,7 @@ local function watchLabel(label)
                         and label.Text == text
                     then
 
-                        pressKey(
-                            key
-                        )
+                        pressKey(key)
 
                     end
 
@@ -880,314 +906,27 @@ local function scanAndWatch(instance)
         instance:GetChildren()
     ) do
 
-        if child:IsA(
-            "TextLabel"
-        ) then
-
-            watchLabel(
-                child
-            )
-
+        if child:IsA("TextLabel") then
+            watchLabel(child)
         end
 
-        scanAndWatch(
-            child
-        )
+        scanAndWatch(child)
 
     end
 end
 
-scanAndWatch(
-    PlayerGui
-)
+scanAndWatch(PlayerGui)
 
-PlayerGui.DescendantAdded:Connect(
-    function(obj)
+PlayerGui.DescendantAdded:Connect(function(obj)
 
-        if obj:IsA(
-            "TextLabel"
-        ) then
-
-            watchLabel(
-                obj
-            )
-
-        end
-
+    if obj:IsA("TextLabel") then
+        watchLabel(obj)
     end
-)
+
+end)
 
 -- ============================================================
--- TEXT UTILITIES
--- ============================================================
-
-local function normalizeName(name)
-
-    return string.lower(
-        tostring(name):gsub(
-            "[%s_%-%.]",
-            ""
-        )
-    )
-end
-
-local function isTextObject(obj)
-
-    return obj:IsA(
-        "TextLabel"
-    )
-    or obj:IsA(
-        "TextButton"
-    )
-    or obj:IsA(
-        "TextBox"
-    )
-end
-
-local function stripRichText(text)
-
-    if not text then
-        return ""
-    end
-
-    text =
-        tostring(
-            text
-        )
-
-    text =
-        text:gsub(
-            "<[^>]*>",
-            ""
-        )
-
-    text =
-        text:gsub(
-            "[\n\r\t]",
-            " "
-        )
-
-    return text
-end
-
--- ============================================================
--- NUMBER PARSER
--- ============================================================
-
-local function extractNumber(text)
-
-    if not text then
-        return nil
-    end
-
-    local clean =
-        stripRichText(
-            text
-        )
-
-    local valuePart =
-        clean:match(
-            ".*:%s*(.-)%s*$"
-        )
-
-    if
-        not valuePart
-        or valuePart == ""
-    then
-
-        valuePart =
-            clean
-
-    end
-
-    local numberText, suffix =
-        valuePart:match(
-            "([%+%-]?%d[%d,]*%.?%d*)%s*([KkMmBbTt]?)"
-        )
-
-    if not numberText then
-        return nil
-    end
-
-    numberText =
-        numberText:gsub(
-            ",",
-            ""
-        )
-
-    local number =
-        tonumber(
-            numberText
-        )
-
-    if not number then
-        return nil
-    end
-
-    suffix =
-        string.upper(
-            suffix or ""
-        )
-
-    if suffix == "K" then
-
-        number =
-            number * 1e3
-
-    elseif suffix == "M" then
-
-        number =
-            number * 1e6
-
-    elseif suffix == "B" then
-
-        number =
-            number * 1e9
-
-    elseif suffix == "T" then
-
-        number =
-            number * 1e12
-
-    end
-
-    return number
-end
-
--- ============================================================
--- STAMINA + FATIGUE PARSER
--- Example:
--- 73%(Fatigue : 21%)
--- ============================================================
-
-local function extractStaminaAndFatigue(text)
-
-    if not text then
-        return nil, nil
-    end
-
-    local clean =
-        stripRichText(
-            text
-        )
-
-    local staminaText =
-        clean:match(
-            "([%d%.]+)%s*%%"
-        )
-
-    local fatigueText =
-        string.lower(
-            clean
-        ):match(
-            "fatigue%s*:%s*([%d%.]+)%s*%%"
-        )
-
-    local stamina =
-        staminaText
-        and tonumber(
-            staminaText
-        )
-        or nil
-
-    local fatigue =
-        fatigueText
-        and tonumber(
-            fatigueText
-        )
-        or nil
-
-    return stamina, fatigue
-end
-
--- ============================================================
--- HUNGER PARSER
--- ============================================================
-
-local function extractHunger(text)
-
-    if not text then
-        return nil
-    end
-
-    local clean =
-        stripRichText(
-            text
-        )
-
-    local percentage =
-        clean:match(
-            "([%d%.]+)%s*%%"
-        )
-
-    if percentage then
-
-        return tonumber(
-            percentage
-        )
-
-    end
-
-    return extractNumber(
-        clean
-    )
-end
-
--- ============================================================
--- HUD VALUE TRACKING
--- ============================================================
-
-local function updateHUDValues()
-
-    -- Stamina + Fatigue
-    if
-        FatigueStaminaText
-        and FatigueStaminaText.Parent
-    then
-
-        local stamina,
-              fatigue =
-            extractStaminaAndFatigue(
-                FatigueStaminaText.Text
-            )
-
-        currentStaminaPercent =
-            stamina
-
-        currentFatiguePercent =
-            fatigue
-
-    else
-
-        currentStaminaPercent =
-            nil
-
-        currentFatiguePercent =
-            nil
-
-    end
-
-    -- Hunger
-    if
-        HungerDisplayText
-        and HungerDisplayText.Parent
-    then
-
-        currentHungerPercent =
-            extractHunger(
-                HungerDisplayText.Text
-            )
-
-    else
-
-        currentHungerPercent =
-            nil
-
-    end
-end
-
--- ============================================================
--- NUMBER FORMATTER
+-- NUMBER FORMAT
 -- ============================================================
 
 local function formatNumber(number)
@@ -1196,19 +935,10 @@ local function formatNumber(number)
         return "N/A"
     end
 
-    if
-        math.abs(number)
-        < 1000000
-    then
+    if math.abs(number) < 1000000 then
 
-        if
-            number % 1 == 0
-        then
-
-            return tostring(
-                number
-            )
-
+        if number % 1 == 0 then
+            return tostring(number)
         end
 
         local text =
@@ -1233,9 +963,7 @@ local function formatNumber(number)
     end
 
     local absolute =
-        math.abs(
-            number
-        )
+        math.abs(number)
 
     if absolute >= 1e12 then
 
@@ -1260,9 +988,7 @@ local function formatNumber(number)
 
     end
 
-    return tostring(
-        number
-    )
+    return tostring(number)
 end
 
 -- ============================================================
@@ -1276,9 +1002,7 @@ for _, info in ipairs(
     TARGET_STATS
 ) do
 
-    statLabels[
-        info.Internal
-    ] =
+    statLabels[info.Internal] =
         StatsTab:CreateLabel(
             info.Display
             .. ": Searching..."
@@ -1311,27 +1035,21 @@ local function findStatObject(statName)
     if
         cached
         and cached.Parent
-        and isTextObject(
-            cached
-        )
+        and isTextObject(cached)
     then
 
         return cached
     end
 
     local target =
-        normalizeName(
-            statName
-        )
+        normalizeName(statName)
 
     for _, obj in ipairs(
         StatsChecker:GetDescendants()
     ) do
 
         if
-            isTextObject(
-                obj
-            )
+            isTextObject(obj)
             and normalizeName(
                 obj.Name
             ) == target
@@ -1339,8 +1057,7 @@ local function findStatObject(statName)
 
             cachedStatObjects[
                 statName
-            ] =
-                obj
+            ] = obj
 
             return obj
 
@@ -1354,18 +1071,14 @@ end
 local function getStatValue(statName)
 
     local obj =
-        findStatObject(
-            statName
-        )
+        findStatObject(statName)
 
     if not obj then
         return nil, nil
     end
 
     return
-        extractNumber(
-            obj.Text
-        ),
+        extractNumber(obj.Text),
         obj.Text
 end
 
@@ -1390,9 +1103,7 @@ local function refreshStats()
             label:Set(
                 info.Display
                 .. ": "
-                .. formatNumber(
-                    value
-                )
+                .. formatNumber(value)
             )
 
         elseif raw then
@@ -1468,18 +1179,18 @@ local function refreshStats()
         )
 
     end
+
 end
 
 -- ============================================================
--- AUTO STAMINA REST
+-- STAMINA REST
 -- ============================================================
 
 local function updateStaminaRest()
 
     if not autoStaminaRestEnabled then
 
-        staminaRestActive =
-            false
+        staminaRestActive = false
 
         return
     end
@@ -1495,8 +1206,7 @@ local function updateStaminaRest()
             <= staminaStopPercent
         then
 
-            staminaRestActive =
-                true
+            staminaRestActive = true
 
         end
 
@@ -1507,8 +1217,7 @@ local function updateStaminaRest()
             >= staminaResumePercent
         then
 
-            staminaRestActive =
-                false
+            staminaRestActive = false
 
         end
 
@@ -1521,11 +1230,10 @@ end
 
 local function trim(text)
 
-    return tostring(
-        text
-    ):match(
+    return tostring(text):match(
         "^%s*(.-)%s*$"
     )
+
 end
 
 local function getFoodNames()
@@ -1542,18 +1250,10 @@ local function getFoodNames()
             "([^,]+)"
         ) do
 
-            name =
-                trim(
-                    name
-                )
+            name = trim(name)
 
             if name ~= "" then
-
-                table.insert(
-                    names,
-                    name
-                )
-
+                table.insert(names, name)
             end
 
         end
@@ -1570,9 +1270,7 @@ local function findFood()
     ) do
 
         local tool =
-            findToolByName(
-                foodName
-            )
+            findToolByName(foodName)
 
         if tool then
             return tool
@@ -1583,39 +1281,361 @@ local function findFood()
     return nil
 end
 
+local function finishAutoEatSession(
+    status,
+    ignoreCurrentLowHunger
+)
+
+    autoEatSessionActive = false
+    autoEatInProgress = false
+    autoEatWorkerRunning = false
+
+    if ignoreCurrentLowHunger then
+        hungerLowHandled = true
+    end
+
+    AutoEatStatusText = status
+
+end
+
+-- ============================================================
+-- NEW AUTO EAT SESSION
+-- ============================================================
+
+local function startAutoEatSession()
+
+    if autoEatWorkerRunning then
+        return
+    end
+
+    if not autoEatEnabled then
+        return
+    end
+
+    autoEatSessionActive = true
+    autoEatWorkerRunning = true
+
+    AutoEatStatusText =
+        "Starting eating session"
+
+    task.spawn(function()
+
+        local failedConfirmations = 0
+
+        while
+            autoEatEnabled
+            and autoEatSessionActive
+        do
+
+            updateHUDValues()
+
+            -- HUD disappeared / cannot read hunger.
+            if currentHungerPercent == nil then
+
+                finishAutoEatSession(
+                    "Hunger not found - resumed",
+                    true
+                )
+
+                return
+            end
+
+            -- =================================================
+            -- FULL
+            -- =================================================
+
+            if
+                currentHungerPercent
+                >= AUTO_EAT_TARGET_PERCENT
+            then
+
+                finishAutoEatSession(
+                    "Full - 100%",
+                    true
+                )
+
+                return
+            end
+
+            -- =================================================
+            -- ANTI FATIGUE HAS PRIORITY
+            -- =================================================
+
+            if antiFatigueActive then
+
+                AutoEatStatusText =
+                    "Waiting for fatigue recovery"
+
+                task.wait(0.25)
+
+                continue
+            end
+
+            -- =================================================
+            -- FIND NEXT FOOD
+            -- =================================================
+
+            local food =
+                findFood()
+
+            -- No food left.
+            -- Resume all other automation immediately.
+            if not food then
+
+                finishAutoEatSession(
+                    "No food left - resumed",
+                    true
+                )
+
+                return
+            end
+
+            local hungerBefore =
+                currentHungerPercent
+
+            -- =================================================
+            -- USE FOOD
+            -- =================================================
+
+            autoEatInProgress = true
+
+            AutoEatStatusText =
+                "Eating "
+                .. food.Name
+                .. " | "
+                .. formatNumber(
+                    hungerBefore
+                )
+                .. "%"
+
+            local activated =
+                equipAndActivateTool(
+                    food
+                )
+
+            -- Could not activate it.
+            if not activated then
+
+                autoEatInProgress =
+                    false
+
+                failedConfirmations =
+                    failedConfirmations + 1
+
+                if
+                    failedConfirmations
+                    >= MAX_FOOD_CONFIRM_FAILURES
+                then
+
+                    finishAutoEatSession(
+                        "Food use failed - resumed",
+                        true
+                    )
+
+                    return
+                end
+
+                AutoEatStatusText =
+                    "Food use failed - retrying"
+
+                task.wait(0.5)
+
+                continue
+            end
+
+            -- =================================================
+            -- CONFIRM HUNGER ACTUALLY INCREASED
+            -- =================================================
+
+            AutoEatStatusText =
+                "Waiting for hunger confirmation..."
+
+            local confirmed =
+                false
+
+            local deadline =
+                os.clock()
+                + FOOD_CONFIRM_TIMEOUT
+
+            while
+                autoEatEnabled
+                and autoEatSessionActive
+                and os.clock() < deadline
+            do
+
+                task.wait(0.1)
+
+                updateHUDValues()
+
+                if currentHungerPercent ~= nil then
+
+                    -- Actual HUD increase means
+                    -- the food really worked.
+                    if
+                        currentHungerPercent
+                        > hungerBefore
+                    then
+
+                        confirmed = true
+
+                        break
+                    end
+
+                    if
+                        currentHungerPercent
+                        >= AUTO_EAT_TARGET_PERCENT
+                    then
+
+                        confirmed = true
+
+                        break
+                    end
+
+                end
+
+            end
+
+            autoEatInProgress =
+                false
+
+            if not autoEatEnabled then
+                break
+            end
+
+            if not autoEatSessionActive then
+                break
+            end
+
+            -- =================================================
+            -- CONFIRMED EAT
+            -- =================================================
+
+            if confirmed then
+
+                failedConfirmations = 0
+
+                updateHUDValues()
+
+                if
+                    currentHungerPercent
+                    and currentHungerPercent
+                        >= AUTO_EAT_TARGET_PERCENT
+                then
+
+                    finishAutoEatSession(
+                        "Full - 100%",
+                        true
+                    )
+
+                    return
+                end
+
+                AutoEatStatusText =
+                    "Confirmed: "
+                    .. formatNumber(
+                        hungerBefore
+                    )
+                    .. "% -> "
+                    .. formatNumber(
+                        currentHungerPercent
+                    )
+                    .. "%"
+
+                -- Small spacing between foods.
+                task.wait(0.25)
+
+            else
+
+                -- =================================================
+                -- FOOD DID NOT INCREASE HUNGER
+                -- =================================================
+
+                failedConfirmations =
+                    failedConfirmations + 1
+
+                -- Maybe the last food was consumed
+                -- but there is nothing else left.
+                if not findFood() then
+
+                    finishAutoEatSession(
+                        "No food left - resumed",
+                        true
+                    )
+
+                    return
+                end
+
+                -- Prevent permanent lock if a tool
+                -- exists but doesn't actually feed you.
+                if
+                    failedConfirmations
+                    >= MAX_FOOD_CONFIRM_FAILURES
+                then
+
+                    finishAutoEatSession(
+                        "Food not confirmed - resumed",
+                        true
+                    )
+
+                    return
+                end
+
+                AutoEatStatusText =
+                    "No hunger increase - retrying"
+
+                task.wait(0.5)
+
+            end
+
+        end
+
+        autoEatInProgress = false
+        autoEatSessionActive = false
+        autoEatWorkerRunning = false
+
+    end)
+
+end
+
 local function updateAutoEat()
 
     if not autoEatEnabled then
 
-        autoEatInProgress =
-            false
-
-        hungerLowHandled =
-            false
-
-        AutoEatStatusText =
-            "OFF"
+        autoEatSessionActive = false
+        autoEatInProgress = false
+        hungerLowHandled = false
+        AutoEatStatusText = "OFF"
 
         return
     end
 
     if currentHungerPercent == nil then
 
-        AutoEatStatusText =
-            "Hunger not found"
+        if not autoEatSessionActive then
+
+            AutoEatStatusText =
+                "Hunger not found"
+
+        end
 
         return
     end
+
+    -- ========================================================
+    -- RESET THE LOW-HUNGER CYCLE
+    -- ========================================================
 
     if
         currentHungerPercent
         > AUTO_EAT_PERCENT
     then
 
-        hungerLowHandled =
-            false
+        hungerLowHandled = false
 
-        if not autoEatInProgress then
+        if
+            not autoEatSessionActive
+            and not autoEatWorkerRunning
+        then
 
             AutoEatStatusText =
                 "Ready"
@@ -1625,7 +1645,25 @@ local function updateAutoEat()
         return
     end
 
-    -- Anti Fatigue has priority
+    -- We already ran out of food / failed this
+    -- low-hunger cycle. Don't keep trying.
+    if hungerLowHandled then
+
+        if not autoEatSessionActive then
+
+            AutoEatStatusText =
+                "Low hunger ignored until reset"
+
+        end
+
+        return
+    end
+
+    if autoEatSessionActive then
+        return
+    end
+
+    -- Anti Fatigue gets priority.
     if antiFatigueActive then
 
         AutoEatStatusText =
@@ -1634,72 +1672,9 @@ local function updateAutoEat()
         return
     end
 
-    if hungerLowHandled then
-        return
-    end
-
-    if autoEatInProgress then
-        return
-    end
-
-    if
-        os.clock()
-        - lastFoodAttempt
-        < 1
-    then
-
-        return
-    end
-
-    lastFoodAttempt =
-        os.clock()
-
-    local food =
-        findFood()
-
-    if not food then
-
-        AutoEatStatusText =
-            "No food found"
-
-        return
-    end
-
-    autoEatInProgress =
-        true
-
-    AutoEatStatusText =
-        "Eating "
-        .. food.Name
-
-    task.spawn(function()
-
-        local success =
-            equipAndActivateTool(
-                food
-            )
-
-        if success then
-
-            hungerLowHandled =
-                true
-
-            task.wait(0.5)
-
-            AutoEatStatusText =
-                "Food used"
-
-        else
-
-            AutoEatStatusText =
-                "Failed to eat"
-
-        end
-
-        autoEatInProgress =
-            false
-
-    end)
+    -- Hunger is <=10%.
+    -- Pause normal automation and begin eating.
+    startAutoEatSession()
 end
 
 -- ============================================================
@@ -1711,32 +1686,24 @@ local requestFunction =
     or http_request
     or request
 
-local DiscordStatusLabel =
-    nil
+local DiscordStatusLabel = nil
 
 local function buildDiscordStatFields()
 
     local fields = {}
 
-    -- Player
     table.insert(fields, {
         name = "Player",
-        value = tostring(
-            player.Name
-        ),
+        value = tostring(player.Name),
         inline = true
     })
 
-    -- User ID
     table.insert(fields, {
         name = "Roblox User ID",
-        value = tostring(
-            player.UserId
-        ),
+        value = tostring(player.UserId),
         inline = true
     })
 
-    -- HUD
     table.insert(fields, {
         name = "Stamina %",
         value =
@@ -1776,7 +1743,6 @@ local function buildDiscordStatFields()
         inline = true
     })
 
-    -- ALL TRACKED STATS
     for _, info in ipairs(
         TARGET_STATS
     ) do
@@ -1787,18 +1753,14 @@ local function buildDiscordStatFields()
             )
 
         table.insert(fields, {
-            name =
-                info.Display,
+            name = info.Display,
 
             value =
                 value ~= nil
-                and formatNumber(
-                    value
-                )
+                and formatNumber(value)
                 or "N/A",
 
-            inline =
-                true
+            inline = true
         })
 
     end
@@ -1834,8 +1796,6 @@ local function sendDiscordWebhook(alertType)
         return false
     end
 
-    -- Refresh values immediately before
-    -- building the webhook.
     updateHUDValues()
 
     if DiscordStatusLabel then
@@ -1851,12 +1811,7 @@ local function sendDiscordWebhook(alertType)
         local success, response =
             pcall(function()
 
-                -- ============================
-                -- DISCORD PING
-                -- ============================
-
-                local mention =
-                    ""
+                local mention = ""
 
                 if discordUserId ~= "" then
 
@@ -1866,10 +1821,6 @@ local function sendDiscordWebhook(alertType)
                         .. ">"
 
                 end
-
-                -- ============================
-                -- MESSAGE TYPE
-                -- ============================
 
                 local title =
                     "Asehole Hub"
@@ -1893,8 +1844,7 @@ local function sendDiscordWebhook(alertType)
                     description =
                         "Fatigue has reached **"
                         .. formatNumber(
-                            currentFatiguePercent
-                            or 0
+                            currentFatiguePercent or 0
                         )
                         .. "%**."
 
@@ -1908,10 +1858,6 @@ local function sendDiscordWebhook(alertType)
                         .. "Recovery is complete and automation can continue."
 
                 end
-
-                -- ============================
-                -- PAYLOAD
-                -- ============================
 
                 local payload = {
 
@@ -1949,8 +1895,6 @@ local function sendDiscordWebhook(alertType)
                     }
                 }
 
-                -- Only allow pinging the
-                -- specifically entered user.
                 if discordUserId ~= "" then
 
                     payload.allowed_mentions.users = {
@@ -1977,6 +1921,7 @@ local function sendDiscordWebhook(alertType)
                             payload
                         )
                 })
+
             end)
 
         if success then
@@ -2034,7 +1979,7 @@ local function sendDiscordWebhook(alertType)
 end
 
 -- ============================================================
--- ANTI FATIGUE + WEBHOOK
+-- ANTI FATIGUE
 -- ============================================================
 
 local function updateAntiFatigue()
@@ -2051,9 +1996,9 @@ local function updateAntiFatigue()
         return
     end
 
-    -- ========================================================
-    -- 90% FATIGUE WEBHOOK
-    -- ========================================================
+    -- ============================
+    -- 90% WEBHOOK
+    -- ============================
 
     if
         currentFatiguePercent
@@ -2065,10 +2010,7 @@ local function updateAntiFatigue()
             and not fatigueWebhookSent
         then
 
-            -- Lock immediately so the
-            -- loop cannot spam the webhook.
-            fatigueWebhookSent =
-                true
+            fatigueWebhookSent = true
 
             local started =
                 sendDiscordWebhook(
@@ -2077,8 +2019,6 @@ local function updateAntiFatigue()
 
             if started then
 
-                -- Once we've hit 90%,
-                -- allow one future 0% alert.
                 fatigueRecoveryArmed =
                     true
 
@@ -2093,16 +2033,14 @@ local function updateAntiFatigue()
 
     else
 
-        -- Rearm 90% alert once fatigue
-        -- is back below the threshold.
         fatigueWebhookSent =
             false
 
     end
 
-    -- ========================================================
-    -- 0% FATIGUE RECOVERY WEBHOOK
-    -- ========================================================
+    -- ============================
+    -- 0% WEBHOOK
+    -- ============================
 
     if
         discordFatigueAlertEnabled
@@ -2117,8 +2055,6 @@ local function updateAntiFatigue()
 
         if started then
 
-            -- Only one recovery notification
-            -- per fatigue cycle.
             fatigueRecoveryArmed =
                 false
 
@@ -2126,31 +2062,23 @@ local function updateAntiFatigue()
 
     end
 
-    -- ========================================================
+    -- ============================
     -- ANTI FATIGUE AUTOMATION
-    -- ========================================================
+    -- ============================
 
     if not antiFatigueEnabled then
 
-        antiFatigueActive =
-            false
-
-        AntiFatigueStatusText =
-            "OFF"
+        antiFatigueActive = false
+        AntiFatigueStatusText = "OFF"
 
         return
     end
 
-    -- Currently sleeping
     if antiFatigueActive then
 
-        if
-            currentFatiguePercent
-            <= 0
-        then
+        if currentFatiguePercent <= 0 then
 
-            antiFatigueActive =
-                false
+            antiFatigueActive = false
 
             AntiFatigueStatusText =
                 "Recovered"
@@ -2169,15 +2097,13 @@ local function updateAntiFatigue()
         return
     end
 
-    -- Start sleeping
     if
         currentFatiguePercent
         >= ANTI_FATIGUE_PERCENT
     then
 
         if
-            os.clock()
-            - lastSleepAttempt
+            os.clock() - lastSleepAttempt
             < 1
         then
 
@@ -2187,8 +2113,6 @@ local function updateAntiFatigue()
         lastSleepAttempt =
             os.clock()
 
-        -- Pause other automation BEFORE
-        -- using sleeping bag.
         antiFatigueActive =
             true
 
@@ -2202,8 +2126,7 @@ local function updateAntiFatigue()
 
         if not success then
 
-            antiFatigueActive =
-                false
+            antiFatigueActive = false
 
             AntiFatigueStatusText =
                 "Sleeping Bag not found"
@@ -2228,91 +2151,58 @@ end
 -- ============================================================
 
 AutoUseTab:CreateInput({
-
-    Name =
-        "Tool Name",
-
-    PlaceholderText =
-        "e.g. Boxing Gloves",
-
-    RemoveTextAfterFocusLost =
-        false,
-
-    CurrentValue =
-        DEFAULT_TOOL_NAME,
-
-    Flag =
-        "ToolNameInput",
+    Name = "Tool Name",
+    PlaceholderText = "e.g. Boxing Gloves",
+    RemoveTextAfterFocusLost = false,
+    CurrentValue = DEFAULT_TOOL_NAME,
+    Flag = "ToolNameInput",
 
     Callback = function(text)
 
         targetToolName =
-            tostring(
-                text or ""
-            )
+            tostring(text or "")
 
     end,
 })
 
 AutoUseTab:CreateToggle({
-
-    Name =
-        "Auto Use Tool",
-
-    CurrentValue =
-        false,
-
-    Flag =
-        "AutoUseToggle",
+    Name = "Auto Use Tool",
+    CurrentValue = false,
+    Flag = "AutoUseToggle",
 
     Callback = function(value)
 
-        autoUseEnabled =
-            value
+        autoUseEnabled = value
 
         if value then
-
             startAutoUse()
-
         else
-
             stopAutoUse()
-
         end
 
     end,
 })
 
 AutoUseTab:CreateButton({
-
-    Name =
-        "Use Once",
+    Name = "Use Once",
 
     Callback = function()
 
         if canRunAutomation() then
-
             equipAndUseTargetTool()
-
         end
 
     end,
 })
 
 -- ============================================================
--- AUTO PROMPTS TAB
+-- PROMPTS TAB
 -- ============================================================
 
 PromptTab:CreateToggle({
-
-    Name =
-        "Instant Hold Prompts",
-
-    CurrentValue =
-        false,
-
-    Flag =
-        "InstantHoldPrompts",
+    Name = "Instant Hold Prompts",
+    CurrentValue = false,
+    Flag = "InstantHoldPrompts",
 
     Callback = function(value)
 
@@ -2320,28 +2210,18 @@ PromptTab:CreateToggle({
             value
 
         if value then
-
             enableInstantPrompts()
-
         else
-
             disableInstantPrompts()
-
         end
 
     end,
 })
 
 PromptTab:CreateToggle({
-
-    Name =
-        "Auto-Press ProximityPrompts",
-
-    CurrentValue =
-        false,
-
-    Flag =
-        "AutoPromptToggle",
+    Name = "Auto-Press ProximityPrompts",
+    CurrentValue = false,
+    Flag = "AutoPromptToggle",
 
     Callback = function(value)
 
@@ -2352,15 +2232,9 @@ PromptTab:CreateToggle({
 })
 
 PromptTab:CreateToggle({
-
-    Name =
-        "Auto-Press Custom Key Prompts",
-
-    CurrentValue =
-        false,
-
-    Flag =
-        "AutoKeyPromptToggle",
+    Name = "Auto-Press Custom Key Prompts",
+    CurrentValue = false,
+    Flag = "AutoKeyPromptToggle",
 
     Callback = function(value)
 
@@ -2371,15 +2245,9 @@ PromptTab:CreateToggle({
 })
 
 PromptTab:CreateToggle({
-
-    Name =
-        "Auto-Press Delayed Key Prompts",
-
-    CurrentValue =
-        false,
-
-    Flag =
-        "AutoDelayedKeyPromptToggle",
+    Name = "Auto-Press Delayed Key Prompts",
+    CurrentValue = false,
+    Flag = "AutoDelayedKeyPromptToggle",
 
     Callback = function(value)
 
@@ -2390,26 +2258,12 @@ PromptTab:CreateToggle({
 })
 
 PromptTab:CreateSlider({
-
-    Name =
-        "Delay Before Press",
-
-    Range = {
-        0.1,
-        3
-    },
-
-    Increment =
-        0.1,
-
-    Suffix =
-        "s",
-
-    CurrentValue =
-        0.8,
-
-    Flag =
-        "DelayedKeyPromptDelay",
+    Name = "Delay Before Press",
+    Range = {0.1, 3},
+    Increment = 0.1,
+    Suffix = "s",
+    CurrentValue = 0.8,
+    Flag = "DelayedKeyPromptDelay",
 
     Callback = function(value)
 
@@ -2420,19 +2274,13 @@ PromptTab:CreateSlider({
 })
 
 -- ============================================================
--- AUTO STAMINA REST UI
+-- STAMINA REST UI
 -- ============================================================
 
 PromptTab:CreateToggle({
-
-    Name =
-        "Auto Stamina Rest",
-
-    CurrentValue =
-        false,
-
-    Flag =
-        "AutoStaminaRest",
+    Name = "Auto Stamina Rest",
+    CurrentValue = false,
+    Flag = "AutoStaminaRest",
 
     Callback = function(value)
 
@@ -2440,36 +2288,19 @@ PromptTab:CreateToggle({
             value
 
         if not value then
-
-            staminaRestActive =
-                false
-
+            staminaRestActive = false
         end
 
     end,
 })
 
 PromptTab:CreateSlider({
-
-    Name =
-        "Rest When Stamina Below",
-
-    Range = {
-        0,
-        100
-    },
-
-    Increment =
-        1,
-
-    Suffix =
-        "%",
-
-    CurrentValue =
-        30,
-
-    Flag =
-        "StaminaStopPercent",
+    Name = "Rest When Stamina Below",
+    Range = {0, 100},
+    Increment = 1,
+    Suffix = "%",
+    CurrentValue = 30,
+    Flag = "StaminaStopPercent",
 
     Callback = function(value)
 
@@ -2480,26 +2311,12 @@ PromptTab:CreateSlider({
 })
 
 PromptTab:CreateSlider({
-
-    Name =
-        "Resume When Stamina Reaches",
-
-    Range = {
-        0,
-        100
-    },
-
-    Increment =
-        1,
-
-    Suffix =
-        "%",
-
-    CurrentValue =
-        80,
-
-    Flag =
-        "StaminaResumePercent",
+    Name = "Resume When Stamina Reaches",
+    Range = {0, 100},
+    Increment = 1,
+    Suffix = "%",
+    CurrentValue = 80,
+    Flag = "StaminaResumePercent",
 
     Callback = function(value)
 
@@ -2514,15 +2331,9 @@ PromptTab:CreateSlider({
 -- ============================================================
 
 PromptTab:CreateToggle({
-
-    Name =
-        "Auto Eat",
-
-    CurrentValue =
-        false,
-
-    Flag =
-        "AutoEat",
+    Name = "Auto Eat",
+    CurrentValue = false,
+    Flag = "AutoEat",
 
     Callback = function(value)
 
@@ -2531,11 +2342,17 @@ PromptTab:CreateToggle({
 
         if not value then
 
+            autoEatSessionActive =
+                false
+
             autoEatInProgress =
                 false
 
             hungerLowHandled =
                 false
+
+            AutoEatStatusText =
+                "OFF"
 
         end
 
@@ -2543,34 +2360,34 @@ PromptTab:CreateToggle({
 })
 
 PromptTab:CreateInput({
-
-    Name =
-        "Custom Food Name",
-
-    PlaceholderText =
-        "Apple or Apple, Chicken",
-
-    RemoveTextAfterFocusLost =
-        false,
-
-    CurrentValue =
-        "",
-
-    Flag =
-        "CustomFoodName",
+    Name = "Custom Food Name",
+    PlaceholderText = "Apple or Apple, Chicken",
+    RemoveTextAfterFocusLost = false,
+    CurrentValue = "",
+    Flag = "CustomFoodName",
 
     Callback = function(text)
 
         customFoodNames =
-            tostring(
-                text or ""
-            )
+            tostring(text or "")
 
     end,
 })
 
 PromptTab:CreateLabel(
-    "Auto Eat activates at 10% hunger."
+    "Starts eating when hunger reaches 10%."
+)
+
+PromptTab:CreateLabel(
+    "Keeps eating until hunger reaches 100%."
+)
+
+PromptTab:CreateLabel(
+    "Each food use must increase the Hunger HUD."
+)
+
+PromptTab:CreateLabel(
+    "No food left = automation resumes."
 )
 
 PromptTab:CreateLabel(
@@ -2582,15 +2399,9 @@ PromptTab:CreateLabel(
 -- ============================================================
 
 PromptTab:CreateToggle({
-
-    Name =
-        "Anti Fatigue",
-
-    CurrentValue =
-        false,
-
-    Flag =
-        "AntiFatigue",
+    Name = "Anti Fatigue",
+    CurrentValue = false,
+    Flag = "AntiFatigue",
 
     Callback = function(value)
 
@@ -2598,10 +2409,7 @@ PromptTab:CreateToggle({
             value
 
         if not value then
-
-            antiFatigueActive =
-                false
-
+            antiFatigueActive = false
         end
 
     end,
@@ -2616,15 +2424,9 @@ PromptTab:CreateLabel(
 -- ============================================================
 
 PromptTab:CreateToggle({
-
-    Name =
-        "Anti AFK",
-
-    CurrentValue =
-        false,
-
-    Flag =
-        "AntiAFK",
+    Name = "Anti AFK",
+    CurrentValue = false,
+    Flag = "AntiAFK",
 
     Callback = function(value)
 
@@ -2635,7 +2437,7 @@ PromptTab:CreateToggle({
 })
 
 -- ============================================================
--- PROMPT STATUS
+-- STATUS LABELS
 -- ============================================================
 
 local StaminaStatusLabel =
@@ -2692,52 +2494,29 @@ WebhookTab:CreateLabel(
 )
 
 WebhookTab:CreateInput({
-
-    Name =
-        "Webhook URL",
-
-    PlaceholderText =
-        "Paste Discord webhook URL",
-
-    RemoveTextAfterFocusLost =
-        false,
-
-    CurrentValue =
-        "",
-
-    Flag =
-        "DiscordWebhookURL",
+    Name = "Webhook URL",
+    PlaceholderText = "Paste Discord webhook URL",
+    RemoveTextAfterFocusLost = false,
+    CurrentValue = "",
+    Flag = "DiscordWebhookURL",
 
     Callback = function(text)
 
         discordWebhookUrl =
-            tostring(
-                text or ""
-            )
+            tostring(text or "")
 
     end,
 })
 
 WebhookTab:CreateInput({
-
-    Name =
-        "Discord User ID",
-
-    PlaceholderText =
-        "e.g. 123456789012345678",
-
-    RemoveTextAfterFocusLost =
-        false,
-
-    CurrentValue =
-        "",
-
-    Flag =
-        "DiscordUserID",
+    Name = "Discord User ID",
+    PlaceholderText = "e.g. 123456789012345678",
+    RemoveTextAfterFocusLost = false,
+    CurrentValue = "",
+    Flag = "DiscordUserID",
 
     Callback = function(text)
 
-        -- Keep digits only
         discordUserId =
             tostring(
                 text or ""
@@ -2750,15 +2529,9 @@ WebhookTab:CreateInput({
 })
 
 WebhookTab:CreateToggle({
-
-    Name =
-        "Fatigue Webhook Alert",
-
-    CurrentValue =
-        false,
-
-    Flag =
-        "DiscordFatigueAlert",
+    Name = "Fatigue Webhook Alert",
+    CurrentValue = false,
+    Flag = "DiscordFatigueAlert",
 
     Callback = function(value)
 
@@ -2788,17 +2561,15 @@ WebhookTab:CreateLabel(
 )
 
 WebhookTab:CreateLabel(
-    "0% fatigue: sends recovery notification + ping."
+    "0% fatigue: sends recovery + ping."
 )
 
 WebhookTab:CreateLabel(
-    "Both alerts contain every tracked stat."
+    "Both alerts include all tracked stats."
 )
 
 WebhookTab:CreateButton({
-
-    Name =
-        "Send Test Webhook",
+    Name = "Send Test Webhook",
 
     Callback = function()
 
@@ -2810,19 +2581,13 @@ WebhookTab:CreateButton({
 })
 
 -- ============================================================
--- STATS TAB CONTROLS
+-- STATS UI
 -- ============================================================
 
 StatsTab:CreateToggle({
-
-    Name =
-        "Auto Refresh Stats",
-
-    CurrentValue =
-        true,
-
-    Flag =
-        "StatAutoRefresh",
+    Name = "Auto Refresh Stats",
+    CurrentValue = true,
+    Flag = "StatAutoRefresh",
 
     Callback = function(value)
 
@@ -2830,35 +2595,19 @@ StatsTab:CreateToggle({
             value
 
         if value then
-
             refreshStats()
-
         end
 
     end,
 })
 
 StatsTab:CreateSlider({
-
-    Name =
-        "Stat Refresh Rate",
-
-    Range = {
-        0.1,
-        2
-    },
-
-    Increment =
-        0.1,
-
-    Suffix =
-        "s",
-
-    CurrentValue =
-        DEFAULT_STAT_REFRESH_RATE,
-
-    Flag =
-        "StatRefreshRate",
+    Name = "Stat Refresh Rate",
+    Range = {0.1, 2},
+    Increment = 0.1,
+    Suffix = "s",
+    CurrentValue = DEFAULT_STAT_REFRESH_RATE,
+    Flag = "StatRefreshRate",
 
     Callback = function(value)
 
@@ -2869,9 +2618,7 @@ StatsTab:CreateSlider({
 })
 
 StatsTab:CreateButton({
-
-    Name =
-        "Refresh Stats Now",
+    Name = "Refresh Stats Now",
 
     Callback = function()
 
@@ -2881,9 +2628,7 @@ StatsTab:CreateButton({
 })
 
 StatsTab:CreateButton({
-
-    Name =
-        "Print Raw Stats",
+    Name = "Print Raw Stats",
 
     Callback = function()
 
@@ -2937,7 +2682,9 @@ StatsTab:CreateButton({
                     obj:GetFullName()
                 )
 
-                print("------------------------------")
+                print(
+                    "------------------------------"
+                )
 
             else
 
@@ -2957,9 +2704,7 @@ StatsTab:CreateButton({
 })
 
 StatsTab:CreateButton({
-
-    Name =
-        "Print Stamina Raw Text",
+    Name = "Print Stamina Raw Text",
 
     Callback = function()
 
@@ -3004,9 +2749,7 @@ StatsTab:CreateButton({
 })
 
 StatsTab:CreateButton({
-
-    Name =
-        "Print HUD Values",
+    Name = "Print HUD Values",
 
     Callback = function()
 
@@ -3043,18 +2786,6 @@ StatsTab:CreateButton({
     end,
 })
 
-StatsTab:CreateLabel(
-    "Stats: HUD > Tabs > StatsChecker"
-)
-
-StatsTab:CreateLabel(
-    "Stamina/Fatigue: HUD > Bars > MainHUD > FatigueStamina"
-)
-
-StatsTab:CreateLabel(
-    "Hunger: HUD > Bars > MainHUD > HungerDisplay"
-)
-
 -- ============================================================
 -- MAIN LOOP
 -- ============================================================
@@ -3063,33 +2794,23 @@ task.spawn(function()
 
     while true do
 
-        -- Always track HUD values
         updateHUDValues()
 
-        -- Stamina logic
         updateStaminaRest()
 
-        -- Fatigue + Discord
         updateAntiFatigue()
 
-        -- Hunger
         updateAutoEat()
 
-        -- Normal stats
         if statAutoRefreshEnabled then
-
             refreshStats()
-
         end
 
         -- ============================
-        -- STAMINA
+        -- HUD STATUS
         -- ============================
 
-        if
-            currentStaminaPercent
-            ~= nil
-        then
+        if currentStaminaPercent ~= nil then
 
             StaminaStatusLabel:Set(
                 "Stamina: "
@@ -3107,14 +2828,7 @@ task.spawn(function()
 
         end
 
-        -- ============================
-        -- FATIGUE
-        -- ============================
-
-        if
-            currentFatiguePercent
-            ~= nil
-        then
+        if currentFatiguePercent ~= nil then
 
             FatigueStatusLabel:Set(
                 "Fatigue: "
@@ -3132,14 +2846,7 @@ task.spawn(function()
 
         end
 
-        -- ============================
-        -- HUNGER
-        -- ============================
-
-        if
-            currentHungerPercent
-            ~= nil
-        then
+        if currentHungerPercent ~= nil then
 
             HungerStatusLabel:Set(
                 "Hunger: "
@@ -3158,7 +2865,7 @@ task.spawn(function()
         end
 
         -- ============================
-        -- STAMINA REST STATUS
+        -- REST STATUS
         -- ============================
 
         if not autoStaminaRestEnabled then
@@ -3182,7 +2889,7 @@ task.spawn(function()
         end
 
         -- ============================
-        -- AUTO EAT
+        -- AUTO EAT STATUS
         -- ============================
 
         AutoEatStatusLabel:Set(
@@ -3191,7 +2898,7 @@ task.spawn(function()
         )
 
         -- ============================
-        -- ANTI FATIGUE
+        -- FATIGUE STATUS
         -- ============================
 
         AntiFatigueStatusLabel:Set(
@@ -3218,7 +2925,7 @@ task.spawn(function()
         end
 
         -- ============================
-        -- WEBHOOK STATUS
+        -- WEBHOOK
         -- ============================
 
         if not discordFatigueAlertEnabled then
@@ -3246,18 +2953,7 @@ task.spawn(function()
             and fatigueWebhookSent
         then
 
-            -- Keep current webhook status.
-
-        elseif
-            currentFatiguePercent
-            and currentFatiguePercent <= 0
-            and fatigueRecoveryArmed
-        then
-
-            -- Recovery is about to send.
-            DiscordStatusLabel:Set(
-                "Status: RECOVERY ARMED"
-            )
+            -- Preserve send status.
 
         else
 
@@ -3268,7 +2964,7 @@ task.spawn(function()
         end
 
         -- ============================
-        -- MASTER AUTOMATION
+        -- MASTER AUTOMATION STATUS
         -- ============================
 
         if antiFatigueActive then
@@ -3277,10 +2973,22 @@ task.spawn(function()
                 "Automation: PAUSED - FATIGUE"
             )
 
-        elseif autoEatInProgress then
+        elseif autoEatSessionActive then
 
             AutomationStatusLabel:Set(
-                "Automation: PAUSED - EATING"
+                "Automation: PAUSED - EATING TO 100%"
+            )
+
+        elseif
+            autoEatEnabled
+            and currentHungerPercent
+            and currentHungerPercent
+                <= AUTO_EAT_PERCENT
+            and not hungerLowHandled
+        then
+
+            AutomationStatusLabel:Set(
+                "Automation: PAUSED - FOOD"
             )
 
         elseif
@@ -3318,3 +3026,4 @@ updateHUDValues()
 refreshStats()
 updateStaminaRest()
 updateAntiFatigue()
+updateAutoEat()
