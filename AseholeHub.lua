@@ -1,12 +1,12 @@
 -- ============================================================
--- ASEHOLE HUB v1.2.1
+-- ASEHOLE HUB v1.2.2
 -- ============================================================
 
 -- ============================
 -- CONFIG
 -- ============================
 
-local HUB_VERSION = "1.2.1"
+local HUB_VERSION = "1.2.2"
 
 local DEFAULT_TOOL_NAME = "Boxing Gloves"
 
@@ -38,6 +38,10 @@ local MAX_FOOD_CONFIRM_FAILURES = 3
 
 local ANTI_FATIGUE_PERCENT = 90
 
+-- NEW:
+local ANTI_FATIGUE_DELAY = 3
+local SLEEPING_BAG_EQUIP_DELAY = 0.4
+
 -- ============================
 -- SERVICES
 -- ============================
@@ -54,14 +58,23 @@ local player = Players.LocalPlayer
 -- GUI PATHS
 -- ============================
 
-local PlayerGui = player:WaitForChild("PlayerGui")
-local HUD = PlayerGui:WaitForChild("HUD")
+local PlayerGui =
+    player:WaitForChild("PlayerGui")
 
-local Tabs = HUD:WaitForChild("Tabs")
-local StatsChecker = Tabs:WaitForChild("StatsChecker")
+local HUD =
+    PlayerGui:WaitForChild("HUD")
 
-local Bars = HUD:WaitForChild("Bars")
-local MainHUD = Bars:WaitForChild("MainHUD")
+local Tabs =
+    HUD:WaitForChild("Tabs")
+
+local StatsChecker =
+    Tabs:WaitForChild("StatsChecker")
+
+local Bars =
+    HUD:WaitForChild("Bars")
+
+local MainHUD =
+    Bars:WaitForChild("MainHUD")
 
 local FatigueStaminaText =
     MainHUD:WaitForChild("FatigueStamina")
@@ -80,29 +93,49 @@ local Rayfield =
         )
     )()
 
-local Window = Rayfield:CreateWindow({
-    Name = "Asehole hub | v" .. HUB_VERSION,
-    LoadingTitle = "Asehole hub",
-    LoadingSubtitle = "Utilities • v" .. HUB_VERSION,
+local Window =
+    Rayfield:CreateWindow({
+        Name =
+            "Asehole hub | v"
+            .. HUB_VERSION,
 
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "AseholeHub",
-        FileName = "Config"
-    },
-})
+        LoadingTitle =
+            "Asehole hub",
+
+        LoadingSubtitle =
+            "Utilities • v"
+            .. HUB_VERSION,
+
+        ConfigurationSaving = {
+            Enabled = true,
+            FolderName = "AseholeHub",
+            FileName = "Config"
+        },
+    })
 
 local AutoUseTab =
-    Window:CreateTab("Auto Use", 4483362458)
+    Window:CreateTab(
+        "Auto Use",
+        4483362458
+    )
 
 local PromptTab =
-    Window:CreateTab("Auto Prompts", 4483362458)
+    Window:CreateTab(
+        "Auto Prompts",
+        4483362458
+    )
 
 local StatsTab =
-    Window:CreateTab("Stats", 4483362458)
+    Window:CreateTab(
+        "Stats",
+        4483362458
+    )
 
 local WebhookTab =
-    Window:CreateTab("Webhook", 4483362458)
+    Window:CreateTab(
+        "Webhook",
+        4483362458
+    )
 
 -- ============================================================
 -- STATE
@@ -129,9 +162,10 @@ local originalHoldDurations =
 
 -- Stats
 local statAutoRefreshEnabled = true
-local statRefreshRate = DEFAULT_STAT_REFRESH_RATE
+local statRefreshRate =
+    DEFAULT_STAT_REFRESH_RATE
 
--- Stamina Rest
+-- Stamina
 local autoStaminaRestEnabled = false
 local staminaStopPercent = 30
 local staminaResumePercent = 80
@@ -151,7 +185,11 @@ local AutoEatStatusText = "OFF"
 -- Anti Fatigue
 local antiFatigueEnabled = false
 local antiFatigueActive = false
-local lastSleepAttempt = 0
+
+-- NEW:
+local antiFatigueWorkerRunning = false
+local antiFatigueCycleHandled = false
+local antiFatigueCycleId = 0
 
 local AntiFatigueStatusText = "OFF"
 
@@ -183,7 +221,8 @@ player.Idled:Connect(function()
 
     pcall(function()
 
-        local camera = workspace.CurrentCamera
+        local camera =
+            workspace.CurrentCamera
 
         if not camera then
             return
@@ -213,22 +252,32 @@ end)
 
 local function findToolByName(name)
 
-    if not name or name == "" then
+    if
+        not name
+        or name == ""
+    then
         return nil
     end
 
-    local wanted = string.lower(name)
+    local wanted =
+        string.lower(name)
 
-    local character = player.Character
-    local backpack = player:FindFirstChild("Backpack")
+    local character =
+        player.Character
+
+    local backpack =
+        player:FindFirstChild("Backpack")
 
     if character then
 
-        for _, item in ipairs(character:GetChildren()) do
+        for _, item in ipairs(
+            character:GetChildren()
+        ) do
 
             if
                 item:IsA("Tool")
-                and string.lower(item.Name) == wanted
+                and string.lower(item.Name)
+                    == wanted
             then
                 return item
             end
@@ -239,11 +288,14 @@ local function findToolByName(name)
 
     if backpack then
 
-        for _, item in ipairs(backpack:GetChildren()) do
+        for _, item in ipairs(
+            backpack:GetChildren()
+        ) do
 
             if
                 item:IsA("Tool")
-                and string.lower(item.Name) == wanted
+                and string.lower(item.Name)
+                    == wanted
             then
                 return item
             end
@@ -261,7 +313,8 @@ local function equipAndActivateTool(tool)
         return false
     end
 
-    local character = player.Character
+    local character =
+        player.Character
 
     local humanoid =
         character
@@ -276,6 +329,7 @@ local function equipAndActivateTool(tool)
     if tool.Parent ~= character then
 
         humanoid:EquipTool(tool)
+
         task.wait(0.12)
 
     end
@@ -284,14 +338,18 @@ local function equipAndActivateTool(tool)
         return false
     end
 
-    tool:Activate()
+    local success =
+        pcall(function()
+            tool:Activate()
+        end)
 
-    return true
+    return success
 end
 
 local function useToolOnceByName(name)
 
-    local tool = findToolByName(name)
+    local tool =
+        findToolByName(name)
 
     if not tool then
         return false
@@ -413,7 +471,7 @@ local function extractNumber(text)
 end
 
 -- ============================================================
--- STAMINA + FATIGUE
+-- STAMINA + FATIGUE PARSER
 -- ============================================================
 
 local function extractStaminaAndFatigue(text)
@@ -449,7 +507,7 @@ local function extractStaminaAndFatigue(text)
 end
 
 -- ============================================================
--- HUNGER
+-- HUNGER PARSER
 -- ============================================================
 
 local function extractHunger(text)
@@ -522,6 +580,8 @@ end
 
 local function canRunAutomation()
 
+    -- Immediately blocks all normal automation
+    -- during the 3-second fatigue delay AND sleeping.
     if antiFatigueActive then
         return false
     end
@@ -533,7 +593,8 @@ local function canRunAutomation()
     if
         autoEatEnabled
         and currentHungerPercent ~= nil
-        and currentHungerPercent <= AUTO_EAT_PERCENT
+        and currentHungerPercent
+            <= AUTO_EAT_PERCENT
         and not hungerLowHandled
     then
         return false
@@ -610,11 +671,16 @@ end
 
 local function makePromptInstant(prompt)
 
-    if not prompt:IsA("ProximityPrompt") then
+    if not prompt:IsA(
+        "ProximityPrompt"
+    ) then
         return
     end
 
-    if originalHoldDurations[prompt] == nil then
+    if
+        originalHoldDurations[prompt]
+        == nil
+    then
 
         originalHoldDurations[prompt] =
             prompt.HoldDuration
@@ -630,7 +696,9 @@ local function enableInstantPrompts()
         workspace:GetDescendants()
     ) do
 
-        if obj:IsA("ProximityPrompt") then
+        if obj:IsA(
+            "ProximityPrompt"
+        ) then
             makePromptInstant(obj)
         end
 
@@ -643,8 +711,12 @@ local function disableInstantPrompts()
         originalHoldDurations
     ) do
 
-        if prompt and prompt.Parent then
-            prompt.HoldDuration = duration
+        if
+            prompt
+            and prompt.Parent
+        then
+            prompt.HoldDuration =
+                duration
         end
 
     end
@@ -654,65 +726,74 @@ local function disableInstantPrompts()
     )
 end
 
-workspace.DescendantAdded:Connect(function(obj)
+workspace.DescendantAdded:Connect(
+    function(obj)
 
-    if
-        instantHoldPromptsEnabled
-        and obj:IsA("ProximityPrompt")
-    then
-        makePromptInstant(obj)
+        if
+            instantHoldPromptsEnabled
+            and obj:IsA(
+                "ProximityPrompt"
+            )
+        then
+
+            makePromptInstant(obj)
+
+        end
+
     end
-
-end)
+)
 
 -- ============================================================
 -- AUTO PROXIMITY PROMPTS
 -- ============================================================
 
-ProximityPromptService.PromptShown:Connect(function(prompt)
+ProximityPromptService.PromptShown:Connect(
+    function(prompt)
 
-    if instantHoldPromptsEnabled then
-        makePromptInstant(prompt)
-    end
+        if instantHoldPromptsEnabled then
+            makePromptInstant(prompt)
+        end
 
-    if not autoPromptEnabled then
-        return
-    end
-
-    if not canRunAutomation() then
-        return
-    end
-
-    task.spawn(function()
+        if not autoPromptEnabled then
+            return
+        end
 
         if not canRunAutomation() then
             return
         end
 
-        local key =
-            prompt.KeyboardKeyCode
+        task.spawn(function()
 
-        VirtualInputManager:SendKeyEvent(
-            true,
-            key,
-            false,
-            game
-        )
+            if not canRunAutomation() then
+                return
+            end
 
-        task.wait(
-            prompt.HoldDuration + 0.05
-        )
+            local key =
+                prompt.KeyboardKeyCode
 
-        VirtualInputManager:SendKeyEvent(
-            false,
-            key,
-            false,
-            game
-        )
+            VirtualInputManager:SendKeyEvent(
+                true,
+                key,
+                false,
+                game
+            )
 
-    end)
+            task.wait(
+                prompt.HoldDuration
+                + 0.05
+            )
 
-end)
+            VirtualInputManager:SendKeyEvent(
+                false,
+                key,
+                false,
+                game
+            )
+
+        end)
+
+    end
+)
 
 -- ============================================================
 -- CUSTOM KEY PROMPTS
@@ -722,11 +803,16 @@ local watchedLabels = {}
 
 local function getKeyCodeFromChar(char)
 
-    char = string.upper(char)
+    char =
+        string.upper(char)
 
     local success, key =
         pcall(function()
-            return Enum.KeyCode[char]
+
+            return Enum.KeyCode[
+                char
+            ]
+
         end)
 
     if success then
@@ -782,15 +868,26 @@ local function watchLabel(label)
             return
         end
 
-        local text = label.Text
+        local text =
+            label.Text
 
-        if text and #text == 1 then
+        if
+            text
+            and #text == 1
+        then
 
             local key =
-                getKeyCodeFromChar(text)
+                getKeyCodeFromChar(
+                    text
+                )
 
             if key then
-                task.spawn(pressKey, key)
+
+                task.spawn(
+                    pressKey,
+                    key
+                )
+
             end
 
         end
@@ -798,7 +895,9 @@ local function watchLabel(label)
 
     local function tryDelayed()
 
-        if not autoDelayedKeyPromptEnabled then
+        if
+            not autoDelayedKeyPromptEnabled
+        then
             return
         end
 
@@ -810,12 +909,18 @@ local function watchLabel(label)
             return
         end
 
-        local text = label.Text
+        local text =
+            label.Text
 
-        if text and #text == 1 then
+        if
+            text
+            and #text == 1
+        then
 
             local key =
-                getKeyCodeFromChar(text)
+                getKeyCodeFromChar(
+                    text
+                )
 
             if key then
 
@@ -829,9 +934,12 @@ local function watchLabel(label)
                         autoDelayedKeyPromptEnabled
                         and canRunAutomation()
                         and label.Visible
-                        and label.Text == text
+                        and label.Text
+                            == text
                     then
+
                         pressKey(key)
+
                     end
 
                 end)
@@ -869,8 +977,12 @@ local function scanAndWatch(instance)
         instance:GetChildren()
     ) do
 
-        if child:IsA("TextLabel") then
+        if child:IsA(
+            "TextLabel"
+        ) then
+
             watchLabel(child)
+
         end
 
         scanAndWatch(child)
@@ -880,16 +992,22 @@ end
 
 scanAndWatch(PlayerGui)
 
-PlayerGui.DescendantAdded:Connect(function(obj)
+PlayerGui.DescendantAdded:Connect(
+    function(obj)
 
-    if obj:IsA("TextLabel") then
-        watchLabel(obj)
+        if obj:IsA(
+            "TextLabel"
+        ) then
+
+            watchLabel(obj)
+
+        end
+
     end
-
-end)
+)
 
 -- ============================================================
--- NUMBER FORMAT
+-- FORMAT NUMBER
 -- ============================================================
 
 local function formatNumber(number)
@@ -898,7 +1016,10 @@ local function formatNumber(number)
         return "N/A"
     end
 
-    if math.abs(number) < 1000000 then
+    if
+        math.abs(number)
+        < 1000000
+    then
 
         if number % 1 == 0 then
             return tostring(number)
@@ -988,7 +1109,9 @@ local HungerStatLabel =
         "Hunger: Searching..."
     )
 
-local function findStatObject(statName)
+local function findStatObject(
+    statName
+)
 
     local cached =
         cachedStatObjects[
@@ -1022,6 +1145,7 @@ local function findStatObject(statName)
             ] = obj
 
             return obj
+
         end
 
     end
@@ -1029,10 +1153,14 @@ local function findStatObject(statName)
     return nil
 end
 
-local function getStatValue(statName)
+local function getStatValue(
+    statName
+)
 
     local obj =
-        findStatObject(statName)
+        findStatObject(
+            statName
+        )
 
     if not obj then
         return nil, nil
@@ -1064,7 +1192,9 @@ local function refreshStats()
             label:Set(
                 info.Display
                 .. ": "
-                .. formatNumber(value)
+                .. formatNumber(
+                    value
+                )
             )
 
         elseif raw then
@@ -1087,7 +1217,10 @@ local function refreshStats()
 
     updateHUDValues()
 
-    if currentStaminaPercent ~= nil then
+    if
+        currentStaminaPercent
+        ~= nil
+    then
 
         StaminaPercentStatLabel:Set(
             "Stamina %: "
@@ -1105,7 +1238,10 @@ local function refreshStats()
 
     end
 
-    if currentFatiguePercent ~= nil then
+    if
+        currentFatiguePercent
+        ~= nil
+    then
 
         FatiguePercentStatLabel:Set(
             "Fatigue: "
@@ -1123,7 +1259,10 @@ local function refreshStats()
 
     end
 
-    if currentHungerPercent ~= nil then
+    if
+        currentHungerPercent
+        ~= nil
+    then
 
         HungerStatLabel:Set(
             "Hunger: "
@@ -1152,10 +1291,14 @@ local function updateStaminaRest()
     if not autoStaminaRestEnabled then
 
         staminaRestActive = false
+
         return
     end
 
-    if currentStaminaPercent == nil then
+    if
+        currentStaminaPercent
+        == nil
+    then
         return
     end
 
@@ -1166,7 +1309,8 @@ local function updateStaminaRest()
             <= staminaStopPercent
         then
 
-            staminaRestActive = true
+            staminaRestActive =
+                true
 
         end
 
@@ -1177,7 +1321,8 @@ local function updateStaminaRest()
             >= staminaResumePercent
         then
 
-            staminaRestActive = false
+            staminaRestActive =
+                false
 
         end
 
@@ -1213,7 +1358,12 @@ local function getFoodNames()
             name = trim(name)
 
             if name ~= "" then
-                table.insert(names, name)
+
+                table.insert(
+                    names,
+                    name
+                )
+
             end
 
         end
@@ -1230,7 +1380,9 @@ local function findFood()
     ) do
 
         local tool =
-            findToolByName(foodName)
+            findToolByName(
+                foodName
+            )
 
         if tool then
             return tool
@@ -1284,7 +1436,10 @@ local function startAutoEatSession()
 
             updateHUDValues()
 
-            if currentHungerPercent == nil then
+            if
+                currentHungerPercent
+                == nil
+            then
 
                 finishAutoEatSession(
                     "Hunger not found - resumed",
@@ -1294,7 +1449,6 @@ local function startAutoEatSession()
                 return
             end
 
-            -- Full
             if
                 currentHungerPercent
                 >= AUTO_EAT_TARGET_PERCENT
@@ -1308,7 +1462,8 @@ local function startAutoEatSession()
                 return
             end
 
-            -- Fatigue takes priority
+            -- Anti Fatigue completely pauses
+            -- the food worker as well.
             if antiFatigueActive then
 
                 AutoEatStatusText =
@@ -1322,7 +1477,6 @@ local function startAutoEatSession()
             local food =
                 findFood()
 
-            -- No food = resume automation
             if not food then
 
                 finishAutoEatSession(
@@ -1348,14 +1502,18 @@ local function startAutoEatSession()
                 .. "%"
 
             local activated =
-                equipAndActivateTool(food)
+                equipAndActivateTool(
+                    food
+                )
 
             if not activated then
 
-                autoEatInProgress = false
+                autoEatInProgress =
+                    false
 
                 failedConfirmations =
-                    failedConfirmations + 1
+                    failedConfirmations
+                    + 1
 
                 if
                     failedConfirmations
@@ -1390,14 +1548,22 @@ local function startAutoEatSession()
             while
                 autoEatEnabled
                 and autoEatSessionActive
-                and os.clock() < deadline
+                and os.clock()
+                    < deadline
             do
+
+                if antiFatigueActive then
+                    break
+                end
 
                 task.wait(0.1)
 
                 updateHUDValues()
 
-                if currentHungerPercent ~= nil then
+                if
+                    currentHungerPercent
+                    ~= nil
+                then
 
                     if
                         currentHungerPercent
@@ -1422,6 +1588,19 @@ local function startAutoEatSession()
             end
 
             autoEatInProgress = false
+
+            -- If fatigue interrupted the food
+            -- confirmation, wait for fatigue instead
+            -- of counting it as a failed food.
+            if antiFatigueActive then
+
+                AutoEatStatusText =
+                    "Waiting for fatigue recovery"
+
+                task.wait(0.25)
+
+                continue
+            end
 
             if not autoEatEnabled then
                 break
@@ -1467,7 +1646,8 @@ local function startAutoEatSession()
             else
 
                 failedConfirmations =
-                    failedConfirmations + 1
+                    failedConfirmations
+                    + 1
 
                 if not findFood() then
 
@@ -1522,18 +1702,21 @@ local function updateAutoEat()
         return
     end
 
-    if currentHungerPercent == nil then
+    if
+        currentHungerPercent
+        == nil
+    then
 
         if not autoEatSessionActive then
+
             AutoEatStatusText =
                 "Hunger not found"
+
         end
 
         return
     end
 
-    -- Rearm Auto Eat when hunger
-    -- rises above the activation threshold.
     if
         currentHungerPercent
         > AUTO_EAT_PERCENT
@@ -1582,7 +1765,7 @@ local function updateAutoEat()
 end
 
 -- ============================================================
--- DISCORD WEBHOOK
+-- DISCORD
 -- ============================================================
 
 local requestFunction =
@@ -1598,20 +1781,25 @@ local function buildDiscordStatFields()
 
     table.insert(fields, {
         name = "Player",
-        value = tostring(player.Name),
+        value = tostring(
+            player.Name
+        ),
         inline = true
     })
 
     table.insert(fields, {
         name = "Roblox User ID",
-        value = tostring(player.UserId),
+        value = tostring(
+            player.UserId
+        ),
         inline = true
     })
 
     table.insert(fields, {
         name = "Stamina %",
         value =
-            currentStaminaPercent ~= nil
+            currentStaminaPercent
+                ~= nil
             and (
                 formatNumber(
                     currentStaminaPercent
@@ -1624,7 +1812,8 @@ local function buildDiscordStatFields()
     table.insert(fields, {
         name = "Fatigue",
         value =
-            currentFatiguePercent ~= nil
+            currentFatiguePercent
+                ~= nil
             and (
                 formatNumber(
                     currentFatiguePercent
@@ -1637,7 +1826,8 @@ local function buildDiscordStatFields()
     table.insert(fields, {
         name = "Hunger",
         value =
-            currentHungerPercent ~= nil
+            currentHungerPercent
+                ~= nil
             and (
                 formatNumber(
                     currentHungerPercent
@@ -1661,7 +1851,9 @@ local function buildDiscordStatFields()
 
             value =
                 value ~= nil
-                and formatNumber(value)
+                and formatNumber(
+                    value
+                )
                 or "N/A",
 
             inline = true
@@ -1672,7 +1864,9 @@ local function buildDiscordStatFields()
     return fields
 end
 
-local function sendDiscordWebhook(alertType)
+local function sendDiscordWebhook(
+    alertType
+)
 
     if discordWebhookUrl == "" then
 
@@ -1717,7 +1911,10 @@ local function sendDiscordWebhook(alertType)
 
                 local mention = ""
 
-                if discordUserId ~= "" then
+                if
+                    discordUserId
+                    ~= ""
+                then
 
                     mention =
                         "<@"
@@ -1729,10 +1926,12 @@ local function sendDiscordWebhook(alertType)
                 local title =
                     "Asehole Hub"
 
-                local description =
-                    ""
+                local description = ""
 
-                if alertType == "test" then
+                if
+                    alertType
+                    == "test"
+                then
 
                     title =
                         "Webhook Test"
@@ -1740,7 +1939,10 @@ local function sendDiscordWebhook(alertType)
                     description =
                         "Webhook connection test from Asehole hub."
 
-                elseif alertType == "fatigue" then
+                elseif
+                    alertType
+                    == "fatigue"
+                then
 
                     title =
                         "Fatigue Alert"
@@ -1753,7 +1955,10 @@ local function sendDiscordWebhook(alertType)
                         )
                         .. "%**."
 
-                elseif alertType == "recovered" then
+                elseif
+                    alertType
+                    == "recovered"
+                then
 
                     title =
                         "Fatigue Recovered"
@@ -1765,7 +1970,6 @@ local function sendDiscordWebhook(alertType)
                 end
 
                 local payload = {
-
                     username =
                         "Asehole hub",
 
@@ -1800,7 +2004,10 @@ local function sendDiscordWebhook(alertType)
                     }
                 }
 
-                if discordUserId ~= "" then
+                if
+                    discordUserId
+                    ~= ""
+                then
 
                     payload.allowed_mentions.users = {
                         discordUserId
@@ -1809,7 +2016,6 @@ local function sendDiscordWebhook(alertType)
                 end
 
                 return requestFunction({
-
                     Url =
                         discordWebhookUrl,
 
@@ -1833,19 +2039,28 @@ local function sendDiscordWebhook(alertType)
 
             if DiscordStatusLabel then
 
-                if alertType == "fatigue" then
+                if
+                    alertType
+                    == "fatigue"
+                then
 
                     DiscordStatusLabel:Set(
                         "Status: FATIGUE ALERT SENT"
                     )
 
-                elseif alertType == "recovered" then
+                elseif
+                    alertType
+                    == "recovered"
+                then
 
                     DiscordStatusLabel:Set(
                         "Status: RECOVERY ALERT SENT"
                     )
 
-                elseif alertType == "test" then
+                elseif
+                    alertType
+                    == "test"
+                then
 
                     DiscordStatusLabel:Set(
                         "Status: TEST SENT"
@@ -1884,12 +2099,208 @@ local function sendDiscordWebhook(alertType)
 end
 
 -- ============================================================
+-- NEW SLEEPING BAG ACTIVATION
+-- ============================================================
+
+local function activateSleepingBag()
+
+    local tool =
+        findToolByName(
+            "Sleeping Bag"
+        )
+
+    if not tool then
+        return false
+    end
+
+    local character =
+        player.Character
+
+    local humanoid =
+        character
+        and character:FindFirstChildOfClass(
+            "Humanoid"
+        )
+
+    if not humanoid then
+        return false
+    end
+
+    -- Make sure another tool is not interfering.
+    humanoid:UnequipTools()
+
+    task.wait(0.15)
+
+    -- Find it again because UnequipTools
+    -- may have moved the instance.
+    tool =
+        findToolByName(
+            "Sleeping Bag"
+        )
+
+    if not tool then
+        return false
+    end
+
+    humanoid:EquipTool(tool)
+
+    -- Give the Sleeping Bag enough time
+    -- to actually become the equipped tool.
+    task.wait(
+        SLEEPING_BAG_EQUIP_DELAY
+    )
+
+    if
+        not tool.Parent
+        or tool.Parent
+            ~= character
+    then
+        return false
+    end
+
+    local success =
+        pcall(function()
+
+            tool:Activate()
+
+        end)
+
+    return success
+end
+
+-- ============================================================
+-- NEW ANTI FATIGUE 3-SECOND SEQUENCE
+-- ============================================================
+
+local function startAntiFatigueSequence()
+
+    if antiFatigueWorkerRunning then
+        return
+    end
+
+    if antiFatigueCycleHandled then
+        return
+    end
+
+    -- Lock immediately.
+    -- Auto Use, Auto Eat and prompts are blocked
+    -- from this exact point.
+    antiFatigueActive = true
+    antiFatigueWorkerRunning = true
+    antiFatigueCycleHandled = true
+
+    antiFatigueCycleId =
+        antiFatigueCycleId + 1
+
+    local thisCycle =
+        antiFatigueCycleId
+
+    AntiFatigueStatusText =
+        "Pausing for 3 seconds"
+
+    task.spawn(function()
+
+        -- ====================================================
+        -- FULL 3 SECOND PAUSE
+        -- ====================================================
+
+        task.wait(
+            ANTI_FATIGUE_DELAY
+        )
+
+        -- Sequence was cancelled / superseded.
+        if
+            thisCycle
+            ~= antiFatigueCycleId
+        then
+            return
+        end
+
+        if not antiFatigueEnabled then
+
+            antiFatigueActive = false
+            antiFatigueWorkerRunning = false
+
+            return
+        end
+
+        updateHUDValues()
+
+        -- If somehow already fully recovered
+        -- during the 3-second wait, do not use bag.
+        if
+            currentFatiguePercent
+            and currentFatiguePercent
+                <= 0
+        then
+
+            antiFatigueActive = false
+            antiFatigueWorkerRunning = false
+            antiFatigueCycleHandled = false
+
+            AntiFatigueStatusText =
+                "Recovered"
+
+            return
+        end
+
+        AntiFatigueStatusText =
+            "Using Sleeping Bag"
+
+        -- ====================================================
+        -- EQUIP + ACTIVATE BAG
+        -- ====================================================
+
+        local success =
+            activateSleepingBag()
+
+        if
+            thisCycle
+            ~= antiFatigueCycleId
+        then
+            return
+        end
+
+        antiFatigueWorkerRunning =
+            false
+
+        if success then
+
+            -- IMPORTANT:
+            -- antiFatigueActive stays TRUE here.
+            -- Everything remains paused until 0%.
+            AntiFatigueStatusText =
+                "Sleeping"
+
+        else
+
+            -- Avoid permanently locking the hub
+            -- if no usable Sleeping Bag exists.
+            antiFatigueActive =
+                false
+
+            AntiFatigueStatusText =
+                "Sleeping Bag failed"
+
+            -- cycleHandled stays true so it doesn't
+            -- repeat the 3-second sequence every 0.2s.
+
+        end
+
+    end)
+
+end
+
+-- ============================================================
 -- ANTI FATIGUE
 -- ============================================================
 
 local function updateAntiFatigue()
 
-    if currentFatiguePercent == nil then
+    if
+        currentFatiguePercent
+        == nil
+    then
 
         if antiFatigueEnabled then
 
@@ -1901,7 +2312,10 @@ local function updateAntiFatigue()
         return
     end
 
-    -- 90% webhook
+    -- ========================================================
+    -- DISCORD 90%
+    -- ========================================================
+
     if
         currentFatiguePercent
         >= ANTI_FATIGUE_PERCENT
@@ -1912,7 +2326,8 @@ local function updateAntiFatigue()
             and not fatigueWebhookSent
         then
 
-            fatigueWebhookSent = true
+            fatigueWebhookSent =
+                true
 
             local started =
                 sendDiscordWebhook(
@@ -1935,15 +2350,20 @@ local function updateAntiFatigue()
 
     else
 
-        fatigueWebhookSent = false
+        fatigueWebhookSent =
+            false
 
     end
 
-    -- 0% recovery webhook
+    -- ========================================================
+    -- DISCORD 0%
+    -- ========================================================
+
     if
         discordFatigueAlertEnabled
         and fatigueRecoveryArmed
-        and currentFatiguePercent <= 0
+        and currentFatiguePercent
+            <= 0
     then
 
         local started =
@@ -1960,82 +2380,132 @@ local function updateAntiFatigue()
 
     end
 
+    -- ========================================================
+    -- ANTI FATIGUE DISABLED
+    -- ========================================================
+
     if not antiFatigueEnabled then
 
-        antiFatigueActive = false
-        AntiFatigueStatusText = "OFF"
+        if
+            antiFatigueActive
+            or antiFatigueWorkerRunning
+        then
 
-        return
-    end
-
-    if antiFatigueActive then
-
-        if currentFatiguePercent <= 0 then
-
-            antiFatigueActive = false
-
-            AntiFatigueStatusText =
-                "Recovered"
-
-        else
-
-            AntiFatigueStatusText =
-                "Sleeping - "
-                .. formatNumber(
-                    currentFatiguePercent
-                )
-                .. "%"
+            -- Cancels any pending delayed worker.
+            antiFatigueCycleId =
+                antiFatigueCycleId + 1
 
         end
 
+        antiFatigueActive = false
+        antiFatigueWorkerRunning = false
+        antiFatigueCycleHandled = false
+
+        AntiFatigueStatusText =
+            "OFF"
+
         return
     end
+
+    -- ========================================================
+    -- RECOVERED
+    -- ========================================================
 
     if
         currentFatiguePercent
-        >= ANTI_FATIGUE_PERCENT
+        <= 0
     then
 
         if
-            os.clock()
-            - lastSleepAttempt
-            < 1
+            antiFatigueActive
+            or antiFatigueWorkerRunning
         then
-            return
+
+            -- Cancel any delayed worker still alive.
+            antiFatigueCycleId =
+                antiFatigueCycleId + 1
+
         end
 
-        lastSleepAttempt = os.clock()
-
-        antiFatigueActive = true
+        antiFatigueActive = false
+        antiFatigueWorkerRunning = false
+        antiFatigueCycleHandled = false
 
         AntiFatigueStatusText =
-            "Using Sleeping Bag"
+            "Recovered"
 
-        local success =
-            useToolOnceByName(
-                "Sleeping Bag"
+        return
+    end
+
+    -- ========================================================
+    -- CURRENTLY IN THE 3 SECOND WAIT
+    -- ========================================================
+
+    if antiFatigueWorkerRunning then
+
+        -- Worker controls its own status.
+        return
+    end
+
+    -- ========================================================
+    -- CURRENTLY SLEEPING
+    -- ========================================================
+
+    if antiFatigueActive then
+
+        AntiFatigueStatusText =
+            "Sleeping - "
+            .. formatNumber(
+                currentFatiguePercent
             )
+            .. "%"
 
-        if not success then
+        return
+    end
 
-            antiFatigueActive = false
+    -- ========================================================
+    -- REARM AFTER DROPPING BELOW 90
+    -- ========================================================
 
-            AntiFatigueStatusText =
-                "Sleeping Bag not found"
+    if
+        currentFatiguePercent
+        < ANTI_FATIGUE_PERCENT
+    then
 
-        else
-
-            AntiFatigueStatusText =
-                "Sleeping"
-
-        end
-
-    else
+        antiFatigueCycleHandled =
+            false
 
         AntiFatigueStatusText =
             "Ready"
 
+        return
     end
+
+    -- ========================================================
+    -- HIT 90%
+    -- ========================================================
+
+    if
+        currentFatiguePercent
+        >= ANTI_FATIGUE_PERCENT
+        and not antiFatigueCycleHandled
+    then
+
+        startAntiFatigueSequence()
+
+        return
+    end
+
+    -- Bag failed during this cycle.
+    if
+        antiFatigueCycleHandled
+        and not antiFatigueActive
+    then
+
+        -- Keep previous failure status.
+        return
+    end
+
 end
 
 -- ============================================================
@@ -2044,44 +2514,61 @@ end
 
 AutoUseTab:CreateInput({
     Name = "Tool Name",
-    PlaceholderText = "e.g. Boxing Gloves",
-    RemoveTextAfterFocusLost = false,
-    CurrentValue = DEFAULT_TOOL_NAME,
-    Flag = "ToolNameInput",
+    PlaceholderText =
+        "e.g. Boxing Gloves",
+    RemoveTextAfterFocusLost =
+        false,
+    CurrentValue =
+        DEFAULT_TOOL_NAME,
+    Flag =
+        "ToolNameInput",
 
     Callback = function(text)
 
         targetToolName =
-            tostring(text or "")
+            tostring(
+                text or ""
+            )
 
     end,
 })
 
 AutoUseTab:CreateToggle({
-    Name = "Auto Use Tool",
-    CurrentValue = false,
-    Flag = "AutoUseToggle",
+    Name =
+        "Auto Use Tool",
+    CurrentValue =
+        false,
+    Flag =
+        "AutoUseToggle",
 
     Callback = function(value)
 
-        autoUseEnabled = value
+        autoUseEnabled =
+            value
 
         if value then
+
             startAutoUse()
+
         else
+
             stopAutoUse()
+
         end
 
     end,
 })
 
 AutoUseTab:CreateButton({
-    Name = "Use Once",
+    Name =
+        "Use Once",
 
     Callback = function()
 
         if canRunAutomation() then
+
             equipAndUseTargetTool()
+
         end
 
     end,
@@ -2092,9 +2579,12 @@ AutoUseTab:CreateButton({
 -- ============================================================
 
 PromptTab:CreateToggle({
-    Name = "Instant Hold Prompts",
-    CurrentValue = false,
-    Flag = "InstantHoldPrompts",
+    Name =
+        "Instant Hold Prompts",
+    CurrentValue =
+        false,
+    Flag =
+        "InstantHoldPrompts",
 
     Callback = function(value)
 
@@ -2102,54 +2592,85 @@ PromptTab:CreateToggle({
             value
 
         if value then
+
             enableInstantPrompts()
+
         else
+
             disableInstantPrompts()
+
         end
 
     end,
 })
 
 PromptTab:CreateToggle({
-    Name = "Auto-Press ProximityPrompts",
-    CurrentValue = false,
-    Flag = "AutoPromptToggle",
+    Name =
+        "Auto-Press ProximityPrompts",
+    CurrentValue =
+        false,
+    Flag =
+        "AutoPromptToggle",
 
     Callback = function(value)
-        autoPromptEnabled = value
+
+        autoPromptEnabled =
+            value
+
     end,
 })
 
 PromptTab:CreateToggle({
-    Name = "Auto-Press Custom Key Prompts",
-    CurrentValue = false,
-    Flag = "AutoKeyPromptToggle",
+    Name =
+        "Auto-Press Custom Key Prompts",
+    CurrentValue =
+        false,
+    Flag =
+        "AutoKeyPromptToggle",
 
     Callback = function(value)
-        autoKeyPromptEnabled = value
+
+        autoKeyPromptEnabled =
+            value
+
     end,
 })
 
 PromptTab:CreateToggle({
-    Name = "Auto-Press Delayed Key Prompts",
-    CurrentValue = false,
-    Flag = "AutoDelayedKeyPromptToggle",
+    Name =
+        "Auto-Press Delayed Key Prompts",
+    CurrentValue =
+        false,
+    Flag =
+        "AutoDelayedKeyPromptToggle",
 
     Callback = function(value)
-        autoDelayedKeyPromptEnabled = value
+
+        autoDelayedKeyPromptEnabled =
+            value
+
     end,
 })
 
 PromptTab:CreateSlider({
-    Name = "Delay Before Press",
-    Range = {0.1, 3},
-    Increment = 0.1,
-    Suffix = "s",
-    CurrentValue = 0.8,
-    Flag = "DelayedKeyPromptDelay",
+    Name =
+        "Delay Before Press",
+    Range =
+        {0.1, 3},
+    Increment =
+        0.1,
+    Suffix =
+        "s",
+    CurrentValue =
+        0.8,
+    Flag =
+        "DelayedKeyPromptDelay",
 
     Callback = function(value)
-        delayedKeyPromptDelay = value
+
+        delayedKeyPromptDelay =
+            value
+
     end,
 })
 
@@ -2158,44 +2679,69 @@ PromptTab:CreateSlider({
 -- ============================================================
 
 PromptTab:CreateToggle({
-    Name = "Auto Stamina Rest",
-    CurrentValue = false,
-    Flag = "AutoStaminaRest",
+    Name =
+        "Auto Stamina Rest",
+    CurrentValue =
+        false,
+    Flag =
+        "AutoStaminaRest",
 
     Callback = function(value)
 
-        autoStaminaRestEnabled = value
+        autoStaminaRestEnabled =
+            value
 
         if not value then
-            staminaRestActive = false
+
+            staminaRestActive =
+                false
+
         end
 
     end,
 })
 
 PromptTab:CreateSlider({
-    Name = "Rest When Stamina Below",
-    Range = {0, 100},
-    Increment = 1,
-    Suffix = "%",
-    CurrentValue = 30,
-    Flag = "StaminaStopPercent",
+    Name =
+        "Rest When Stamina Below",
+    Range =
+        {0, 100},
+    Increment =
+        1,
+    Suffix =
+        "%",
+    CurrentValue =
+        30,
+    Flag =
+        "StaminaStopPercent",
 
     Callback = function(value)
-        staminaStopPercent = value
+
+        staminaStopPercent =
+            value
+
     end,
 })
 
 PromptTab:CreateSlider({
-    Name = "Resume When Stamina Reaches",
-    Range = {0, 100},
-    Increment = 1,
-    Suffix = "%",
-    CurrentValue = 80,
-    Flag = "StaminaResumePercent",
+    Name =
+        "Resume When Stamina Reaches",
+    Range =
+        {0, 100},
+    Increment =
+        1,
+    Suffix =
+        "%",
+    CurrentValue =
+        80,
+    Flag =
+        "StaminaResumePercent",
 
     Callback = function(value)
-        staminaResumePercent = value
+
+        staminaResumePercent =
+            value
+
     end,
 })
 
@@ -2204,20 +2750,31 @@ PromptTab:CreateSlider({
 -- ============================================================
 
 PromptTab:CreateToggle({
-    Name = "Auto Eat",
-    CurrentValue = false,
-    Flag = "AutoEat",
+    Name =
+        "Auto Eat",
+    CurrentValue =
+        false,
+    Flag =
+        "AutoEat",
 
     Callback = function(value)
 
-        autoEatEnabled = value
+        autoEatEnabled =
+            value
 
         if not value then
 
-            autoEatSessionActive = false
-            autoEatInProgress = false
-            hungerLowHandled = false
-            AutoEatStatusText = "OFF"
+            autoEatSessionActive =
+                false
+
+            autoEatInProgress =
+                false
+
+            hungerLowHandled =
+                false
+
+            AutoEatStatusText =
+                "OFF"
 
         end
 
@@ -2225,15 +2782,28 @@ PromptTab:CreateToggle({
 })
 
 PromptTab:CreateInput({
-    Name = "Custom Food Name",
-    PlaceholderText = "Apple or Apple, Chicken",
-    RemoveTextAfterFocusLost = false,
-    CurrentValue = "",
-    Flag = "CustomFoodName",
+    Name =
+        "Custom Food Name",
+
+    PlaceholderText =
+        "Apple or Apple, Chicken",
+
+    RemoveTextAfterFocusLost =
+        false,
+
+    CurrentValue =
+        "",
+
+    Flag =
+        "CustomFoodName",
 
     Callback = function(text)
+
         customFoodNames =
-            tostring(text or "")
+            tostring(
+                text or ""
+            )
+
     end,
 })
 
@@ -2262,23 +2832,51 @@ PromptTab:CreateLabel(
 -- ============================================================
 
 PromptTab:CreateToggle({
-    Name = "Anti Fatigue",
-    CurrentValue = false,
-    Flag = "AntiFatigue",
+    Name =
+        "Anti Fatigue",
+    CurrentValue =
+        false,
+    Flag =
+        "AntiFatigue",
 
     Callback = function(value)
 
-        antiFatigueEnabled = value
+        antiFatigueEnabled =
+            value
 
         if not value then
-            antiFatigueActive = false
+
+            -- Cancel a pending 3-second sequence.
+            antiFatigueCycleId =
+                antiFatigueCycleId + 1
+
+            antiFatigueActive =
+                false
+
+            antiFatigueWorkerRunning =
+                false
+
+            antiFatigueCycleHandled =
+                false
+
+            AntiFatigueStatusText =
+                "OFF"
+
         end
 
     end,
 })
 
 PromptTab:CreateLabel(
-    "Uses Sleeping Bag at 90% fatigue and resumes at 0%."
+    "At 90%: pauses everything for 3 seconds."
+)
+
+PromptTab:CreateLabel(
+    "Then equips and activates Sleeping Bag."
+)
+
+PromptTab:CreateLabel(
+    "Automation resumes when fatigue reaches 0%."
 )
 
 -- ============================================================
@@ -2286,12 +2884,18 @@ PromptTab:CreateLabel(
 -- ============================================================
 
 PromptTab:CreateToggle({
-    Name = "Anti AFK",
-    CurrentValue = false,
-    Flag = "AntiAFK",
+    Name =
+        "Anti AFK",
+    CurrentValue =
+        false,
+    Flag =
+        "AntiAFK",
 
     Callback = function(value)
-        antiAfkEnabled = value
+
+        antiAfkEnabled =
+            value
+
     end,
 })
 
@@ -2353,24 +2957,46 @@ WebhookTab:CreateLabel(
 )
 
 WebhookTab:CreateInput({
-    Name = "Webhook URL",
-    PlaceholderText = "Paste Discord webhook URL",
-    RemoveTextAfterFocusLost = false,
-    CurrentValue = "",
-    Flag = "DiscordWebhookURL",
+    Name =
+        "Webhook URL",
+
+    PlaceholderText =
+        "Paste Discord webhook URL",
+
+    RemoveTextAfterFocusLost =
+        false,
+
+    CurrentValue =
+        "",
+
+    Flag =
+        "DiscordWebhookURL",
 
     Callback = function(text)
+
         discordWebhookUrl =
-            tostring(text or "")
+            tostring(
+                text or ""
+            )
+
     end,
 })
 
 WebhookTab:CreateInput({
-    Name = "Discord User ID",
-    PlaceholderText = "e.g. 123456789012345678",
-    RemoveTextAfterFocusLost = false,
-    CurrentValue = "",
-    Flag = "DiscordUserID",
+    Name =
+        "Discord User ID",
+
+    PlaceholderText =
+        "e.g. 123456789012345678",
+
+    RemoveTextAfterFocusLost =
+        false,
+
+    CurrentValue =
+        "",
+
+    Flag =
+        "DiscordUserID",
 
     Callback = function(text)
 
@@ -2386,9 +3012,14 @@ WebhookTab:CreateInput({
 })
 
 WebhookTab:CreateToggle({
-    Name = "Fatigue Webhook Alert",
-    CurrentValue = false,
-    Flag = "DiscordFatigueAlert",
+    Name =
+        "Fatigue Webhook Alert",
+
+    CurrentValue =
+        false,
+
+    Flag =
+        "DiscordFatigueAlert",
 
     Callback = function(value)
 
@@ -2397,8 +3028,11 @@ WebhookTab:CreateToggle({
 
         if not value then
 
-            fatigueWebhookSent = false
-            fatigueRecoveryArmed = false
+            fatigueWebhookSent =
+                false
+
+            fatigueRecoveryArmed =
+                false
 
         end
 
@@ -2423,10 +3057,15 @@ WebhookTab:CreateLabel(
 )
 
 WebhookTab:CreateButton({
-    Name = "Send Test Webhook",
+    Name =
+        "Send Test Webhook",
 
     Callback = function()
-        sendDiscordWebhook("test")
+
+        sendDiscordWebhook(
+            "test"
+        )
+
     end,
 })
 
@@ -2435,13 +3074,19 @@ WebhookTab:CreateButton({
 -- ============================================================
 
 StatsTab:CreateToggle({
-    Name = "Auto Refresh Stats",
-    CurrentValue = true,
-    Flag = "StatAutoRefresh",
+    Name =
+        "Auto Refresh Stats",
+
+    CurrentValue =
+        true,
+
+    Flag =
+        "StatAutoRefresh",
 
     Callback = function(value)
 
-        statAutoRefreshEnabled = value
+        statAutoRefreshEnabled =
+            value
 
         if value then
             refreshStats()
@@ -2451,28 +3096,46 @@ StatsTab:CreateToggle({
 })
 
 StatsTab:CreateSlider({
-    Name = "Stat Refresh Rate",
-    Range = {0.1, 2},
-    Increment = 0.1,
-    Suffix = "s",
-    CurrentValue = DEFAULT_STAT_REFRESH_RATE,
-    Flag = "StatRefreshRate",
+    Name =
+        "Stat Refresh Rate",
+
+    Range =
+        {0.1, 2},
+
+    Increment =
+        0.1,
+
+    Suffix =
+        "s",
+
+    CurrentValue =
+        DEFAULT_STAT_REFRESH_RATE,
+
+    Flag =
+        "StatRefreshRate",
 
     Callback = function(value)
-        statRefreshRate = value
+
+        statRefreshRate =
+            value
+
     end,
 })
 
 StatsTab:CreateButton({
-    Name = "Refresh Stats Now",
+    Name =
+        "Refresh Stats Now",
 
     Callback = function()
+
         refreshStats()
+
     end,
 })
 
 StatsTab:CreateButton({
-    Name = "Print Raw Stats",
+    Name =
+        "Print Raw Stats",
 
     Callback = function()
 
@@ -2526,7 +3189,9 @@ StatsTab:CreateButton({
                     obj:GetFullName()
                 )
 
-                print("------------------------------")
+                print(
+                    "------------------------------"
+                )
 
             else
 
@@ -2546,7 +3211,8 @@ StatsTab:CreateButton({
 })
 
 StatsTab:CreateButton({
-    Name = "Print Stamina Raw Text",
+    Name =
+        "Print Stamina Raw Text",
 
     Callback = function()
 
@@ -2591,7 +3257,8 @@ StatsTab:CreateButton({
 })
 
 StatsTab:CreateButton({
-    Name = "Print HUD Values",
+    Name =
+        "Print HUD Values",
 
     Callback = function()
 
@@ -2630,12 +3297,12 @@ StatsTab:CreateButton({
 
 -- ============================================================
 -- LOAD SAVED CONFIG
--- Must happen AFTER all controls/flags are created.
 -- ============================================================
 
 task.wait(0.5)
 
-local configLoaded, configError =
+local configLoaded,
+      configError =
     pcall(function()
 
         Rayfield:LoadConfiguration()
@@ -2663,6 +3330,9 @@ task.spawn(function()
 
         updateStaminaRest()
 
+        -- IMPORTANT:
+        -- Anti Fatigue is processed before
+        -- Auto Eat so it gets priority.
         updateAntiFatigue()
 
         updateAutoEat()
@@ -2671,8 +3341,14 @@ task.spawn(function()
             refreshStats()
         end
 
-        -- Stamina
-        if currentStaminaPercent ~= nil then
+        -- ============================
+        -- STAMINA
+        -- ============================
+
+        if
+            currentStaminaPercent
+            ~= nil
+        then
 
             StaminaStatusLabel:Set(
                 "Stamina: "
@@ -2690,8 +3366,14 @@ task.spawn(function()
 
         end
 
-        -- Fatigue
-        if currentFatiguePercent ~= nil then
+        -- ============================
+        -- FATIGUE
+        -- ============================
+
+        if
+            currentFatiguePercent
+            ~= nil
+        then
 
             FatigueStatusLabel:Set(
                 "Fatigue: "
@@ -2709,8 +3391,14 @@ task.spawn(function()
 
         end
 
-        -- Hunger
-        if currentHungerPercent ~= nil then
+        -- ============================
+        -- HUNGER
+        -- ============================
+
+        if
+            currentHungerPercent
+            ~= nil
+        then
 
             HungerStatusLabel:Set(
                 "Hunger: "
@@ -2728,7 +3416,10 @@ task.spawn(function()
 
         end
 
-        -- Stamina Rest
+        -- ============================
+        -- STAMINA REST
+        -- ============================
+
         if not autoStaminaRestEnabled then
 
             RestStatusLabel:Set(
@@ -2749,19 +3440,28 @@ task.spawn(function()
 
         end
 
-        -- Auto Eat
+        -- ============================
+        -- AUTO EAT
+        -- ============================
+
         AutoEatStatusLabel:Set(
             "Auto Eat Status: "
             .. AutoEatStatusText
         )
 
-        -- Anti Fatigue
+        -- ============================
+        -- ANTI FATIGUE
+        -- ============================
+
         AntiFatigueStatusLabel:Set(
             "Anti Fatigue Status: "
             .. AntiFatigueStatusText
         )
 
-        -- Anti AFK
+        -- ============================
+        -- ANTI AFK
+        -- ============================
+
         if antiAfkEnabled then
 
             AntiAfkStatusLabel:Set(
@@ -2776,20 +3476,31 @@ task.spawn(function()
 
         end
 
-        -- Discord
-        if not discordFatigueAlertEnabled then
+        -- ============================
+        -- WEBHOOK
+        -- ============================
+
+        if
+            not discordFatigueAlertEnabled
+        then
 
             DiscordStatusLabel:Set(
                 "Status: OFF"
             )
 
-        elseif discordWebhookUrl == "" then
+        elseif
+            discordWebhookUrl
+            == ""
+        then
 
             DiscordStatusLabel:Set(
                 "Status: WAITING FOR WEBHOOK"
             )
 
-        elseif discordUserId == "" then
+        elseif
+            discordUserId
+            == ""
+        then
 
             DiscordStatusLabel:Set(
                 "Status: ARMED - NO PING ID"
@@ -2802,7 +3513,7 @@ task.spawn(function()
             and fatigueWebhookSent
         then
 
-            -- Keep sent state.
+            -- Keep sent status.
 
         else
 
@@ -2812,12 +3523,25 @@ task.spawn(function()
 
         end
 
-        -- Master state
+        -- ============================
+        -- MASTER AUTOMATION
+        -- ============================
+
         if antiFatigueActive then
 
-            AutomationStatusLabel:Set(
-                "Automation: PAUSED - FATIGUE"
-            )
+            if antiFatigueWorkerRunning then
+
+                AutomationStatusLabel:Set(
+                    "Automation: PAUSED - FATIGUE 3S"
+                )
+
+            else
+
+                AutomationStatusLabel:Set(
+                    "Automation: PAUSED - SLEEPING"
+                )
+
+            end
 
         elseif autoEatSessionActive then
 
