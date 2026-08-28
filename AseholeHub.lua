@@ -1,12 +1,12 @@
 -- ============================================================
--- ASEHOLE HUB v1.3.1
+-- ASEHOLE HUB v1.3.2
 -- ============================================================
 
 -- ============================
 -- CONFIG
 -- ============================
 
-local HUB_VERSION = "1.3.1"
+local HUB_VERSION = "1.3.2"
 local DEFAULT_TOOL_NAME = "Boxing Gloves"
 
 local TARGET_STATS = {
@@ -824,6 +824,21 @@ local function tryCaptureCandyPurchaseCallback()
     if not success or not connections then
         AutoCandyStatusText = "Could not inspect vending button"
         return false
+    end
+
+    local upvalueGetter = getupvalues or (debug and debug.getupvalues)
+
+    -- Compatibility fallback for executors that expose the connected
+    -- function but do not implement getupvalues/debug.getupvalues.
+    if not upvalueGetter and #connections == 1 then
+        local connection = connections[1]
+        local func = connection.Function or connection.Callback
+
+        if typeof(func) == "function" then
+            candyPurchaseCallback = func
+            AutoCandyStatusText = "Buy-5 callback captured (compat)"
+            return true
+        end
     end
 
     for _, connection in ipairs(connections) do
