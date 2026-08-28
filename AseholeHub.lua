@@ -1,12 +1,12 @@
 -- ============================================================
--- ASEHOLE HUB v1.3.0
+-- ASEHOLE HUB v1.3.1
 -- ============================================================
 
 -- ============================
 -- CONFIG
 -- ============================
 
-local HUB_VERSION = "1.3.0"
+local HUB_VERSION = "1.3.1"
 local DEFAULT_TOOL_NAME = "Boxing Gloves"
 
 local TARGET_STATS = {
@@ -42,9 +42,9 @@ local SLEEPING_BAG_EQUIP_DELAY = 0.4
 -- Auto Candy
 local AUTO_CANDY_TARGET_QUANTITY = 10
 local CANDY_PURCHASE_BATCH_SIZE = 5
-local CANDY_PURCHASE_DELAY = 0.08
 local CANDY_PURCHASE_CONFIRM_TIMEOUT = 3
 local CANDY_EAT_CONFIRM_TIMEOUT = 3
+local CANDY_EAT_POLL_DELAY = 0.02
 local MAX_CANDY_CONFIRM_FAILURES = 3
 
 -- ============================
@@ -137,7 +137,7 @@ local autoCandyEnabled = false
 local autoCandyWorkerRunning = false
 local autoCandySessionActive = false
 local autoCandyInProgress = false
-local candyVendingSignal = nil
+local candyPurchaseCallback = nil
 local AutoCandyStatusText = "OFF"
 
 -- Anti Fatigue
@@ -802,8 +802,8 @@ local function getFunctionUpvalues(func)
     return nil
 end
 
-local function tryCaptureCandyVendingSignal()
-    if candyVendingSignal then
+local function tryCaptureCandyPurchaseCallback()
+    if candyPurchaseCallback then
         return true
     end
 
@@ -831,61 +831,40 @@ local function tryCaptureCandyVendingSignal()
 
         if typeof(func) == "function" then
             local upvalues = getFunctionUpvalues(func)
+            local hasCandyStock = false
 
             if upvalues then
-                local signalCandidate = nil
-                local hasCandyStock = false
-
                 for _, value in pairs(upvalues) do
                     if typeof(value) == "Instance"
                         and value:IsA("NumberValue")
                         and value.Name == "Candy"
                     then
                         hasCandyStock = true
-                    elseif typeof(value) == "table" then
-                        local fireSuccess, fireMethod = pcall(function()
-                            return value.Fire
-                        end)
-
-                        if fireSuccess and typeof(fireMethod) == "function" then
-                            signalCandidate = value
-                        end
+                        break
                     end
                 end
+            end
 
-                if signalCandidate and hasCandyStock then
-                    candyVendingSignal = signalCandidate
-                    AutoCandyStatusText = "Vending signal captured"
-                    return true
-                end
+            if hasCandyStock then
+                candyPurchaseCallback = func
+                AutoCandyStatusText = "Buy-5 callback captured"
+                return true
             end
         end
     end
 
-    AutoCandyStatusText = "Candy signal not found"
+    AutoCandyStatusText = "Candy buy callback not found"
     return false
 end
 
-local function fireCandyPurchaseOnce()
-    if not candyVendingSignal then
-        return false, "signal missing"
+local function fireCandyPurchaseBatch()
+    if not candyPurchaseCallback then
+        return false, "callback missing"
     end
 
-    local candyStock = getCandyStockObject()
-
-    if not candyStock then
-        return false, "Candy stock missing"
-    end
-
-    local success, err = pcall(function()
-        candyVendingSignal:Fire(
-            "Manager",
-            "VendingMachine",
-            candyStock.Name
-        )
+    return pcall(function()
+        candyPurchaseCallback()
     end)
-
-    return success, err
 end
 
 local function waitForCandyIncrease(beforeQuantity, timeout)
@@ -917,7 +896,7 @@ local function waitForCandyDecrease(beforeQuantity, timeout)
             return false, "fatigue"
         end
 
-        task.wait(0.1)
+        task.wait(CANDY_EAT_POLL_DELAY)
 
         local current = getCandyQuantity()
         if current < beforeQuantity then
@@ -929,7 +908,7 @@ local function waitForCandyDecrease(beforeQuantity, timeout)
 end
 
 local function buyCandyBatch()
-    if not candyVendingSignal and not tryCaptureCandyVendingSignal() then
+    if not candyPurchaseCallback and not tryCaptureCandyPurchaseCallback() then
         return false
     end
 
@@ -941,27 +920,15 @@ local function buyCandyBatch()
         .. "/"
         .. tostring(AUTO_CANDY_TARGET_QUANTITY)
 
-    local firedAny = false
+    local success, err = fireCandyPurchaseBatch()
 
-    for _ = 1, CANDY_PURCHASE_BATCH_SIZE do
-        if not autoCandyEnabled or antiFatigueActive then
-            break
-        end
-
-        local success = fireCandyPurchaseOnce()
-
-        if success then
-            firedAny = true
-        end
-
-        task.wait(CANDY_PURCHASE_DELAY)
-    end
-
-    if not firedAny then
+    if not success then
+        AutoCandyStatusText = "Buy-5 callback failed"
+        warn("[Asehole hub] Candy buy callback error:", err)
         return false
     end
 
-    AutoCandyStatusText = "Waiting for purchase confirmation"
+    AutoCandyStatusText = "Waiting for +5 confirmation"
 
     local confirmed, result = waitForCandyIncrease(
         before,
@@ -970,7 +937,7 @@ local function buyCandyBatch()
 
     if confirmed then
         AutoCandyStatusText =
-            "Bought Candy | "
+            "Bought 5 Candy | "
             .. tostring(result)
             .. "/"
             .. tostring(AUTO_CANDY_TARGET_QUANTITY)
@@ -980,7 +947,10 @@ local function buyCandyBatch()
     if result == "fatigue" then
         AutoCandyStatusText = "Waiting for fatigue recovery"
     else
-        AutoCandyStatusText = "Purchase not confirmed"
+        local gained = math.max(0, (tonumber(result) or before) - before)
+        AutoCandyStatusText =
+            "Expected +5, got +"
+            .. tostring(gained)
     end
 
     return false
@@ -1065,7 +1035,6 @@ local function eatAllCandy()
             end
 
             AutoCandyStatusText = "Candy confirmed | " .. tostring(result) .. " left"
-            task.wait(0.15)
         else
             failedConfirmations += 1
 
@@ -1101,8 +1070,8 @@ local function startAutoCandyWorker()
                 continue
             end
 
-            if not candyVendingSignal then
-                if not tryCaptureCandyVendingSignal() then
+            if not candyPurchaseCallback then
+                if not tryCaptureCandyPurchaseCallback() then
                     task.wait(0.4)
                     continue
                 end
@@ -1169,8 +1138,8 @@ end
 PlayerGui.DescendantAdded:Connect(function(obj)
     if autoCandyEnabled and obj.Name == "Option" and obj:IsA("GuiButton") then
         task.delay(0.2, function()
-            if autoCandyEnabled and not candyVendingSignal then
-                tryCaptureCandyVendingSignal()
+            if autoCandyEnabled and not candyPurchaseCallback then
+                tryCaptureCandyPurchaseCallback()
             end
         end)
     end
@@ -2177,7 +2146,7 @@ StatsTab:CreateButton({
         print("Hunger:", currentHungerPercent)
         print("Hunger RAW:", HungerDisplayText.Text)
         print("Candy Quantity:", getCandyQuantity())
-        print("Candy Signal Captured:", candyVendingSignal ~= nil)
+        print("Candy Buy-5 Callback Captured:", candyPurchaseCallback ~= nil)
         print("==============================")
         print("")
     end,
