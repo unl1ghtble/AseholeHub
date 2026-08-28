@@ -1,0 +1,79 @@
+name: Patch Auto Candy v1.3.2
+
+on:
+  push:
+    paths:
+      - '.github/workflows/patch-auto-candy-v132.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch Auto Candy compatibility
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('AseholeHub.lua')
+          s = p.read_text(encoding='utf-8')
+
+          assert 'local HUB_VERSION = "1.3.1"' in s
+          s = s.replace('-- ASEHOLE HUB v1.3.1', '-- ASEHOLE HUB v1.3.2', 1)
+          s = s.replace('local HUB_VERSION = "1.3.1"', 'local HUB_VERSION = "1.3.2"', 1)
+
+          old = '''    local success, connections = pcall(getconnections, option.MouseButton2Click)
+
+    if not success or not connections then
+        AutoCandyStatusText = "Could not inspect vending button"
+        return false
+    end
+
+    for _, connection in ipairs(connections) do
+'''
+
+          new = '''    local success, connections = pcall(getconnections, option.MouseButton2Click)
+
+    if not success or not connections then
+        AutoCandyStatusText = "Could not inspect vending button"
+        return false
+    end
+
+    local upvalueGetter = getupvalues or (debug and debug.getupvalues)
+
+    -- Compatibility fallback for executors that expose the connected
+    -- function but do not implement getupvalues/debug.getupvalues.
+    if not upvalueGetter and #connections == 1 then
+        local connection = connections[1]
+        local func = connection.Function or connection.Callback
+
+        if typeof(func) == "function" then
+            candyPurchaseCallback = func
+            AutoCandyStatusText = "Buy-5 callback captured (compat)"
+            return true
+        end
+    end
+
+    for _, connection in ipairs(connections) do
+'''
+
+          assert old in s, 'expected v1.3.1 capture block not found'
+          s = s.replace(old, new, 1)
+
+          assert 'local HUB_VERSION = "1.3.2"' in s
+          assert 'if not upvalueGetter and #connections == 1 then' in s
+          assert 'Buy-5 callback captured (compat)' in s
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AseholeHub.lua
+          git diff --cached --quiet || git commit -m "Add Auto Candy executor compatibility fallback"
+          git push
