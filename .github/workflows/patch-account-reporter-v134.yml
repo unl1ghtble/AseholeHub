@@ -1,0 +1,34 @@
+name: Patch Account Reporter v1.3.4
+
+on:
+  push:
+    paths:
+      - '.github/workflows/patch-account-reporter-v134.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  red-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify reporter feature is missing
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          s = Path('AseholeHub.lua').read_text(encoding='utf-8')
+
+          assert 'local ACCOUNT_REPORT_INTERVAL = 3600' in s
+          assert '[666134602]' in s and 'Nickname = "token"' in s
+          assert '[3725794499]' in s and 'Nickname = "filip"' in s
+          assert 'PASTE_TOKEN_WEBHOOK_URL_HERE' in s
+          assert 'PASTE_FILIP_WEBHOOK_URL_HERE' in s
+          assert 'local function sendAccountStatsSnapshot' in s
+          assert 'fields = buildDiscordStatFields()' in s
+          assert 'task.wait(ACCOUNT_REPORT_INTERVAL)' in s
+          assert 'startAccountStatsReporter()' in s
+          PY
