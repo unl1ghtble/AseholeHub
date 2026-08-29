@@ -52,11 +52,11 @@ local ACCOUNT_REPORT_INTERVAL = 3600
 local ACCOUNT_REPORT_TARGETS = {
     [666134602] = {
         Nickname = "token",
-        WebhookUrl = "PASTE_TOKEN_WEBHOOK_URL_HERE",
+        WebhookUrl = "https://discord.com/api/webhooks/1543235871673811054/yygX61_5zxxsjhpHhDSxiKj6zVg8dsocO3zo8imDvNhSJdgqiv1IYG-dp_u7Zvl3dOMa",
     },
     [3725794499] = {
         Nickname = "filip",
-        WebhookUrl = "PASTE_FILIP_WEBHOOK_URL_HERE",
+        WebhookUrl = "https://discord.com/api/webhooks/1543236038728884396/ucb-4qraSP_Q5aS6u0jc7_l0tNnDc6w1fl9KR9paXr-q-egdtDUdDv4ldLN7flSNcuaY",
     },
 }
 
