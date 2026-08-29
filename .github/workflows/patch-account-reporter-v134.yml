@@ -19,6 +19,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import base64
 
           p = Path('AseholeHub.lua')
           s = p.read_text(encoding='utf-8')
@@ -30,127 +31,14 @@ jobs:
           s = s.replace('-- ASEHOLE HUB v1.3.3', '-- ASEHOLE HUB v1.3.4', 1)
           s = s.replace('local HUB_VERSION = "1.3.3"', 'local HUB_VERSION = "1.3.4"', 1)
 
-          constants_anchor = '''local MAX_CANDY_CONFIRM_FAILURES = 3
-
--- ============================
--- SERVICES'''
-          constants_block = '''local MAX_CANDY_CONFIRM_FAILURES = 3
-
--- Account stats reporter
-local ACCOUNT_REPORT_INTERVAL = 3600
-local ACCOUNT_REPORT_TARGETS = {
-    [666134602] = {
-        Nickname = "token",
-        WebhookUrl = "PASTE_TOKEN_WEBHOOK_URL_HERE",
-    },
-    [3725794499] = {
-        Nickname = "filip",
-        WebhookUrl = "PASTE_FILIP_WEBHOOK_URL_HERE",
-    },
-}
-
--- ============================
--- SERVICES'''
+          constants_anchor = 'local MAX_CANDY_CONFIRM_FAILURES = 3\n\n-- ============================\n-- SERVICES'
+          constants_block = base64.b64decode('bG9jYWwgTUFYX0NBTkRZX0NPTkZJUk1fRkFJTFVSRVMgPSAzCgotLSBBY2NvdW50IHN0YXRzIHJlcG9ydGVyCmxvY2FsIEFDQ09VTlRfUkVQT1JUX0lOVEVSVkFMID0gMzYwMApsb2NhbCBBQ0NPVU5UX1JFUE9SVF9UQVJHRVRTID0gewogICAgWzY2NjEzNDYwMl0gPSB7CiAgICAgICAgTmlja25hbWUgPSAidG9rZW4iLAogICAgICAgIFdlYmhvb2tVcmwgPSAiUEFTVEVfVE9LRU5fV0VCSE9PS19VUkxfSEVSRSIsCiAgICB9LAogICAgWzM3MjU3OTQ0OTldID0gewogICAgICAgIE5pY2tuYW1lID0gImZpbGlwIiwKICAgICAgICBXZWJob29rVXJsID0gIlBBU1RFX0ZJTElQX1dFQkhPT0tfVVJMX0hFUkUiLAogICAgfSwKfQoKLS0gPT09PT09PT09PT09PT09PT09PT09PT09PT09PQotLSBTRVJWSUNFUw==').decode('utf-8')
           assert constants_anchor in s
           s = s.replace(constants_anchor, constants_block, 1)
 
           reporter_anchor = 'local function sendDiscordWebhook(alertType)'
+          reporter_block = base64.b64decode('LS0gPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09Ci0tIEFDQ09VTlQgUkVQT1JURVIKLS0gPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09Cgpsb2NhbCBmdW5jdGlvbiBpc0FjY291bnRSZXBvcnRlcldlYmhvb2tDb25maWd1cmVkKHVybCkKICAgIHJldHVybiB0eXBlKHVybCkgPT0gInN0cmluZyIKICAgICAgICBhbmQgdXJsIH49ICIiCiAgICAgICAgYW5kIG5vdCBzdHJpbmcuZmluZCh1cmwsICJQQVNURV8iLCAxLCB0cnVlKQplbmQKCmxvY2FsIGZ1bmN0aW9uIHNlbmRBY2NvdW50U3RhdHNTbmFwc2hvdChhY2NvdW50KQogICAgaWYgbm90IGFjY291bnQKICAgICAgICBvciBub3QgaXNBY2NvdW50UmVwb3J0ZXJXZWJob29rQ29uZmlndXJlZChhY2NvdW50LldlYmhvb2tVcmwpCiAgICAgICAgb3Igbm90IHJlcXVlc3RGdW5jdGlvbgogICAgdGhlbgogICAgICAgIHJldHVybiBmYWxzZQogICAgZW5kCgogICAgdXBkYXRlSFVEVmFsdWVzKCkKCiAgICBsb2NhbCBmaWVsZHMgPSBidWlsZERpc2NvcmRTdGF0RmllbGRzKCkKCiAgICB0YWJsZS5pbnNlcnQoZmllbGRzLCAxLCB7CiAgICAgICAgbmFtZSA9ICJOaWNrbmFtZSIsCiAgICAgICAgdmFsdWUgPSB0b3N0cmluZyhhY2NvdW50Lk5pY2tuYW1lKSwKICAgICAgICBpbmxpbmUgPSB0cnVlLAogICAgfSkKCiAgICB0YWJsZS5pbnNlcnQoZmllbGRzLCAyLCB7CiAgICAgICAgbmFtZSA9ICJVc2VySWQiLAogICAgICAgIHZhbHVlID0gdG9zdHJpbmcocGxheWVyLlVzZXJJZCksCiAgICAgICAgaW5saW5lID0gdHJ1ZSwKICAgIH0pCgogICAgbG9jYWwgcGF5bG9hZCA9IHsKICAgICAgICB1c2VybmFtZSA9ICJBc2Vob2xlIEh1YiIsCiAgICAgICAgZW1iZWRzID0gewogICAgICAgICAgICB7CiAgICAgICAgICAgICAgICB0aXRsZSA9IHRvc3RyaW5nKGFjY291bnQuTmlja25hbWUpIC4uICIg4oCiIEFjY291bnQgU3RhdHMiLAogICAgICAgICAgICAgICAgZGVzY3JpcHRpb24gPSAiQXV0b21hdGljIGhvdXJseSBhY2NvdW50IHNuYXBzaG90IiwKICAgICAgICAgICAgICAgIGZpZWxkcyA9IGZpZWxkcywKICAgICAgICAgICAgICAgIGZvb3RlciA9IHsKICAgICAgICAgICAgICAgICAgICB0ZXh0ID0gIkFzZWhvbGUgaHViIOKAoiB2IiAuLiBIVUJfVkVSU0lPTiAuLiAiIOKAoiBBY2NvdW50IFJlcG9ydGVyIgogICAgICAgICAgICAgICAgfSwKICAgICAgICAgICAgICAgIHRpbWVzdGFtcCA9IERhdGVUaW1lLm5vdygpOlRvSXNvRGF0ZSgpLAogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfQoKICAgIGxvY2FsIHN1Y2Nlc3MsIHJlc3VsdCA9IHBjYWxsKGZ1bmN0aW9uKCkKICAgICAgICByZXR1cm4gcmVxdWVzdEZ1bmN0aW9uKHsKICAgICAgICAgICAgVXJsID0gYWNjb3VudC5XZWJob29rVXJsLAogICAgICAgICAgICBNZXRob2QgPSAiUE9TVCIsCiAgICAgICAgICAgIEhlYWRlcnMgPSB7CiAgICAgICAgICAgICAgICBbIkNvbnRlbnQtVHlwZSJdID0gImFwcGxpY2F0aW9uL2pzb24iCiAgICAgICAgICAgIH0sCiAgICAgICAgICAgIEJvZHkgPSBIdHRwU2VydmljZTpKU09ORW5jb2RlKHBheWxvYWQpLAogICAgICAgIH0pCiAgICBlbmQpCgogICAgcmV0dXJuIHN1Y2Nlc3MsIHJlc3VsdAplbmQKCmxvY2FsIGZ1bmN0aW9uIHN0YXJ0QWNjb3VudFN0YXRzUmVwb3J0ZXIoKQogICAgbG9jYWwgYWNjb3VudCA9IEFDQ09VTlRfUkVQT1JUX1RBUkdFVFNbcGxheWVyLlVzZXJJZF0KCiAgICBpZiBub3QgYWNjb3VudAogICAgICAgIG9yIG5vdCBpc0FjY291bnRSZXBvcnRlcldlYmhvb2tDb25maWd1cmVkKGFjY291bnQuV2ViaG9va1VybCkKICAgICAgICBvciBub3QgcmVxdWVzdEZ1bmN0aW9uCiAgICB0aGVuCiAgICAgICAgcmV0dXJuCiAgICBlbmQKCiAgICBsb2NhbCBlbnZpcm9ubWVudCA9IChnZXRnZW52IGFuZCBnZXRnZW52KCkpIG9yIF9HCiAgICBsb2NhbCByZXBvcnRlcktleSA9ICJfX0FTRUhPTEVfQUNDT1VOVF9SRVBPUlRFUl8iIC4uIHRvc3RyaW5nKHBsYXllci5Vc2VySWQpCgogICAgaWYgZW52aXJvbm1lbnRbcmVwb3J0ZXJLZXldIHRoZW4KICAgICAgICByZXR1cm4KICAgIGVuZAoKICAgIGVudmlyb25tZW50W3JlcG9ydGVyS2V5XSA9IHRydWUKCiAgICB0YXNrLnNwYXduKGZ1bmN0aW9uKCkKICAgICAgICB3aGlsZSB0cnVlIGRvCiAgICAgICAgICAgIHNlbmRBY2NvdW50U3RhdHNTbmFwc2hvdChhY2NvdW50KQogICAgICAgICAgICB0YXNrLndhaXQoQUNDT1VOVF9SRVBPUlRfSU5URVJWQUwpCiAgICAgICAgZW5kCiAgICBlbmQpCmVuZAoKc3RhcnRBY2NvdW50U3RhdHNSZXBvcnRlcigpCgo=').decode('utf-8')
           assert reporter_anchor in s
-
-          reporter_block = '''-- ============================================================
--- ACCOUNT REPORTER
--- ============================================================
-
-local function isAccountReporterWebhookConfigured(url)
-    return type(url) == "string"
-        and url ~= ""
-        and not string.find(url, "PASTE_", 1, true)
-end
-
-local function sendAccountStatsSnapshot(account)
-    if not account
-        or not isAccountReporterWebhookConfigured(account.WebhookUrl)
-        or not requestFunction
-    then
-        return false
-    end
-
-    updateHUDValues()
-
-    local fields = buildDiscordStatFields()
-
-    table.insert(fields, 1, {
-        name = "Nickname",
-        value = tostring(account.Nickname),
-        inline = true,
-    })
-
-    table.insert(fields, 2, {
-        name = "UserId",
-        value = tostring(player.UserId),
-        inline = true,
-    })
-
-    local payload = {
-        username = "Asehole Hub",
-        embeds = {
-            {
-                title = tostring(account.Nickname) .. " • Account Stats",
-                description = "Automatic hourly account snapshot",
-                fields = fields,
-                footer = {
-                    text = "Asehole hub • v" .. HUB_VERSION .. " • Account Reporter"
-                },
-                timestamp = DateTime.now():ToIsoDate(),
-            }
-        }
-    }
-
-    local success, result = pcall(function()
-        return requestFunction({
-            Url = account.WebhookUrl,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json"
-            },
-            Body = HttpService:JSONEncode(payload),
-        })
-    end)
-
-    return success, result
-end
-
-local function startAccountStatsReporter()
-    local account = ACCOUNT_REPORT_TARGETS[player.UserId]
-
-    if not account
-        or not isAccountReporterWebhookConfigured(account.WebhookUrl)
-        or not requestFunction
-    then
-        return
-    end
-
-    local environment = (getgenv and getgenv()) or _G
-    local reporterKey = "__ASEHOLE_ACCOUNT_REPORTER_" .. tostring(player.UserId)
-
-    if environment[reporterKey] then
-        return
-    end
-
-    environment[reporterKey] = true
-
-    task.spawn(function()
-        while true do
-            sendAccountStatsSnapshot(account)
-            task.wait(ACCOUNT_REPORT_INTERVAL)
-        end
-    end)
-end
-
-startAccountStatsReporter()
-
-'''
-
           s = s.replace(reporter_anchor, reporter_block + reporter_anchor, 1)
 
           # GREEN regression checks
@@ -164,13 +52,13 @@ startAccountStatsReporter()
           assert 'local function sendAccountStatsSnapshot' in s
           assert 'local fields = buildDiscordStatFields()' in s
           assert 'ACCOUNT_REPORT_TARGETS[player.UserId]' in s
-          assert 'sendAccountStatsSnapshot(account)' in s
-          assert 'task.wait(ACCOUNT_REPORT_INTERVAL)' in s
-          assert s.index('sendAccountStatsSnapshot(account)') < s.index('task.wait(ACCOUNT_REPORT_INTERVAL)')
+          assert 'while true do\n            sendAccountStatsSnapshot(account)\n            task.wait(ACCOUNT_REPORT_INTERVAL)' in s
           assert 'startAccountStatsReporter()' in s
           assert 'discord.com/api/webhooks/' not in reporter_block
 
-          reporter_section = s[s.index('-- ACCOUNT REPORTER'):s.index(reporter_anchor)]
+          reporter_start = s.index('-- ACCOUNT REPORTER')
+          reporter_end = s.index(reporter_anchor, reporter_start)
+          reporter_section = s[reporter_start:reporter_end]
           assert 'WebhookTab' not in reporter_section
           assert 'CreateLabel' not in reporter_section
           assert 'CreateToggle' not in reporter_section
