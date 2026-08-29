@@ -9,26 +9,191 @@ permissions:
   contents: write
 
 jobs:
-  red-test:
+  patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify reporter feature is missing
+      - name: Patch account reporter
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          s = Path('AseholeHub.lua').read_text(encoding='utf-8')
+          p = Path('AseholeHub.lua')
+          s = p.read_text(encoding='utf-8')
 
+          assert '-- ASEHOLE HUB v1.3.3' in s
+          assert 'local HUB_VERSION = "1.3.3"' in s
+          assert 'local ACCOUNT_REPORT_INTERVAL = 3600' not in s
+
+          s = s.replace('-- ASEHOLE HUB v1.3.3', '-- ASEHOLE HUB v1.3.4', 1)
+          s = s.replace('local HUB_VERSION = "1.3.3"', 'local HUB_VERSION = "1.3.4"', 1)
+
+          constants_anchor = '''local MAX_CANDY_CONFIRM_FAILURES = 3
+
+-- ============================
+-- SERVICES'''
+          constants_block = '''local MAX_CANDY_CONFIRM_FAILURES = 3
+
+-- Account stats reporter
+local ACCOUNT_REPORT_INTERVAL = 3600
+local ACCOUNT_REPORT_TARGETS = {
+    [666134602] = {
+        Nickname = "token",
+        WebhookUrl = "PASTE_TOKEN_WEBHOOK_URL_HERE",
+    },
+    [3725794499] = {
+        Nickname = "filip",
+        WebhookUrl = "PASTE_FILIP_WEBHOOK_URL_HERE",
+    },
+}
+
+-- ============================
+-- SERVICES'''
+          assert constants_anchor in s
+          s = s.replace(constants_anchor, constants_block, 1)
+
+          reporter_anchor = 'local function sendDiscordWebhook(alertType)'
+          assert reporter_anchor in s
+
+          reporter_block = '''-- ============================================================
+-- ACCOUNT REPORTER
+-- ============================================================
+
+local function isAccountReporterWebhookConfigured(url)
+    return type(url) == "string"
+        and url ~= ""
+        and not string.find(url, "PASTE_", 1, true)
+end
+
+local function sendAccountStatsSnapshot(account)
+    if not account
+        or not isAccountReporterWebhookConfigured(account.WebhookUrl)
+        or not requestFunction
+    then
+        return false
+    end
+
+    updateHUDValues()
+
+    local fields = buildDiscordStatFields()
+
+    table.insert(fields, 1, {
+        name = "Nickname",
+        value = tostring(account.Nickname),
+        inline = true,
+    })
+
+    table.insert(fields, 2, {
+        name = "UserId",
+        value = tostring(player.UserId),
+        inline = true,
+    })
+
+    local payload = {
+        username = "Asehole Hub",
+        embeds = {
+            {
+                title = tostring(account.Nickname) .. " • Account Stats",
+                description = "Automatic hourly account snapshot",
+                fields = fields,
+                footer = {
+                    text = "Asehole hub • v" .. HUB_VERSION .. " • Account Reporter"
+                },
+                timestamp = DateTime.now():ToIsoDate(),
+            }
+        }
+    }
+
+    local success, result = pcall(function()
+        return requestFunction({
+            Url = account.WebhookUrl,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = HttpService:JSONEncode(payload),
+        })
+    end)
+
+    return success, result
+end
+
+local function startAccountStatsReporter()
+    local account = ACCOUNT_REPORT_TARGETS[player.UserId]
+
+    if not account
+        or not isAccountReporterWebhookConfigured(account.WebhookUrl)
+        or not requestFunction
+    then
+        return
+    end
+
+    local environment = (getgenv and getgenv()) or _G
+    local reporterKey = "__ASEHOLE_ACCOUNT_REPORTER_" .. tostring(player.UserId)
+
+    if environment[reporterKey] then
+        return
+    end
+
+    environment[reporterKey] = true
+
+    task.spawn(function()
+        while true do
+            sendAccountStatsSnapshot(account)
+            task.wait(ACCOUNT_REPORT_INTERVAL)
+        end
+    end)
+end
+
+startAccountStatsReporter()
+
+'''
+
+          s = s.replace(reporter_anchor, reporter_block + reporter_anchor, 1)
+
+          # GREEN regression checks
+          assert '-- ASEHOLE HUB v1.3.4' in s
+          assert 'local HUB_VERSION = "1.3.4"' in s
           assert 'local ACCOUNT_REPORT_INTERVAL = 3600' in s
           assert '[666134602]' in s and 'Nickname = "token"' in s
           assert '[3725794499]' in s and 'Nickname = "filip"' in s
           assert 'PASTE_TOKEN_WEBHOOK_URL_HERE' in s
           assert 'PASTE_FILIP_WEBHOOK_URL_HERE' in s
           assert 'local function sendAccountStatsSnapshot' in s
-          assert 'fields = buildDiscordStatFields()' in s
+          assert 'local fields = buildDiscordStatFields()' in s
+          assert 'ACCOUNT_REPORT_TARGETS[player.UserId]' in s
+          assert 'sendAccountStatsSnapshot(account)' in s
           assert 'task.wait(ACCOUNT_REPORT_INTERVAL)' in s
+          assert s.index('sendAccountStatsSnapshot(account)') < s.index('task.wait(ACCOUNT_REPORT_INTERVAL)')
           assert 'startAccountStatsReporter()' in s
+          assert 'discord.com/api/webhooks/' not in reporter_block
+
+          reporter_section = s[s.index('-- ACCOUNT REPORTER'):s.index(reporter_anchor)]
+          assert 'WebhookTab' not in reporter_section
+          assert 'CreateLabel' not in reporter_section
+          assert 'CreateToggle' not in reporter_section
+          assert 'CreateButton' not in reporter_section
+
+          p.write_text(s, encoding='utf-8')
           PY
+
+      - name: Verify diff
+        shell: bash
+        run: |
+          git diff --check
+          grep -q 'local HUB_VERSION = "1.3.4"' AseholeHub.lua
+          grep -q 'local ACCOUNT_REPORT_INTERVAL = 3600' AseholeHub.lua
+          grep -q 'PASTE_TOKEN_WEBHOOK_URL_HERE' AseholeHub.lua
+          grep -q 'PASTE_FILIP_WEBHOOK_URL_HERE' AseholeHub.lua
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AseholeHub.lua
+          git diff --cached --check
+          git commit -m "Add hourly account stats reporter"
+          git push origin HEAD:${GITHUB_REF_NAME}
