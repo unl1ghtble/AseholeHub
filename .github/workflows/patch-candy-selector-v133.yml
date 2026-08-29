@@ -1,0 +1,96 @@
+name: Patch Candy selector v1.3.3
+
+on:
+  push:
+    paths:
+      - '.github/workflows/patch-candy-selector-v133.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch Candy vending selector
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('AseholeHub.lua')
+          s = p.read_text(encoding='utf-8')
+
+          assert 'local HUB_VERSION = "1.3.2"' in s
+          s = s.replace('-- ASEHOLE HUB v1.3.2', '-- ASEHOLE HUB v1.3.3', 1)
+          s = s.replace('local HUB_VERSION = "1.3.2"', 'local HUB_VERSION = "1.3.3"', 1)
+
+          old_selector = '''local function getCandyVendingOption()
+              local popups = HUD:FindFirstChild("Popups")
+              local vendingMachine = popups and popups:FindFirstChild("VendingMachine")
+              local options = vendingMachine and vendingMachine:FindFirstChild("Options")
+              local option = options and options:FindFirstChild("Option")
+
+              if option and option:IsA("GuiButton") then
+                  return option
+              end
+
+              return nil
+          end'''
+
+          new_selector = '''local function getCandyVendingOption()
+              local popups = HUD:FindFirstChild("Popups")
+              local vendingMachine = popups and popups:FindFirstChild("VendingMachine")
+              local options = vendingMachine and vendingMachine:FindFirstChild("Options")
+
+              if not options then
+                  return nil
+              end
+
+              for _, option in ipairs(options:GetChildren()) do
+                  if option:IsA("GuiButton") then
+                      local frame = option:FindFirstChild("Frame")
+                      local title = frame and frame:FindFirstChild("Title")
+
+                      if title then
+                          local success, titleText = pcall(function()
+                              return title.Text
+                          end)
+
+                          if success and type(titleText) == "string" then
+                              local normalizedTitle = string.lower(titleText)
+                              normalizedTitle = string.gsub(normalizedTitle, "^%s+", "")
+
+                              if string.sub(normalizedTitle, 1, 5) == "candy" then
+                                  return option
+                              end
+                          end
+                      end
+                  end
+              end
+
+              return nil
+          end'''
+
+          assert old_selector in s
+          s = s.replace(old_selector, new_selector, 1)
+
+          assert 'options:GetChildren()' in s
+          assert 'FindFirstChild("Title")' in s
+          assert 'string.sub(normalizedTitle, 1, 5) == "candy"' in s
+          assert 'local HUB_VERSION = "1.3.3"' in s
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AseholeHub.lua
+          git diff --cached --check
+          git commit -m "Fix Auto Candy vending option selection"
+          git push origin HEAD:${GITHUB_REF_NAME}
