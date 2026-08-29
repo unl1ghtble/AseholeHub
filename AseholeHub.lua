@@ -1,12 +1,12 @@
 -- ============================================================
--- ASEHOLE HUB v1.3.2
+-- ASEHOLE HUB v1.3.3
 -- ============================================================
 
 -- ============================
 -- CONFIG
 -- ============================
 
-local HUB_VERSION = "1.3.2"
+local HUB_VERSION = "1.3.3"
 local DEFAULT_TOOL_NAME = "Boxing Gloves"
 
 local TARGET_STATS = {
@@ -777,10 +777,31 @@ local function getCandyVendingOption()
     local popups = HUD:FindFirstChild("Popups")
     local vendingMachine = popups and popups:FindFirstChild("VendingMachine")
     local options = vendingMachine and vendingMachine:FindFirstChild("Options")
-    local option = options and options:FindFirstChild("Option")
 
-    if option and option:IsA("GuiButton") then
-        return option
+    if not options then
+        return nil
+    end
+
+    for _, option in ipairs(options:GetChildren()) do
+        if option:IsA("GuiButton") then
+            local frame = option:FindFirstChild("Frame")
+            local title = frame and frame:FindFirstChild("Title")
+
+            if title then
+                local success, titleText = pcall(function()
+                    return title.Text
+                end)
+
+                if success and type(titleText) == "string" then
+                    local normalizedTitle = string.lower(titleText)
+                    normalizedTitle = string.gsub(normalizedTitle, "^%s+", "")
+
+                    if string.sub(normalizedTitle, 1, 5) == "candy" then
+                        return option
+                    end
+                end
+            end
+        end
     end
 
     return nil
