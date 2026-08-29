@@ -1,12 +1,12 @@
 -- ============================================================
--- ASEHOLE HUB v1.3.3
+-- ASEHOLE HUB v1.3.4
 -- ============================================================
 
 -- ============================
 -- CONFIG
 -- ============================
 
-local HUB_VERSION = "1.3.3"
+local HUB_VERSION = "1.3.4"
 local DEFAULT_TOOL_NAME = "Boxing Gloves"
 
 local TARGET_STATS = {
@@ -46,6 +46,19 @@ local CANDY_PURCHASE_CONFIRM_TIMEOUT = 3
 local CANDY_EAT_CONFIRM_TIMEOUT = 3
 local CANDY_EAT_POLL_DELAY = 0.02
 local MAX_CANDY_CONFIRM_FAILURES = 3
+
+-- Account stats reporter
+local ACCOUNT_REPORT_INTERVAL = 3600
+local ACCOUNT_REPORT_TARGETS = {
+    [666134602] = {
+        Nickname = "token",
+        WebhookUrl = "PASTE_TOKEN_WEBHOOK_URL_HERE",
+    },
+    [3725794499] = {
+        Nickname = "filip",
+        WebhookUrl = "PASTE_FILIP_WEBHOOK_URL_HERE",
+    },
+}
 
 -- ============================
 -- SERVICES
@@ -1497,6 +1510,98 @@ local function buildDiscordStatFields()
 
     return fields
 end
+
+-- ============================================================
+-- ACCOUNT REPORTER
+-- ============================================================
+
+local function isAccountReporterWebhookConfigured(url)
+    return type(url) == "string"
+        and url ~= ""
+        and not string.find(url, "PASTE_", 1, true)
+end
+
+local function sendAccountStatsSnapshot(account)
+    if not account
+        or not isAccountReporterWebhookConfigured(account.WebhookUrl)
+        or not requestFunction
+    then
+        return false
+    end
+
+    updateHUDValues()
+
+    local fields = buildDiscordStatFields()
+
+    table.insert(fields, 1, {
+        name = "Nickname",
+        value = tostring(account.Nickname),
+        inline = true,
+    })
+
+    table.insert(fields, 2, {
+        name = "UserId",
+        value = tostring(player.UserId),
+        inline = true,
+    })
+
+    local payload = {
+        username = "Asehole Hub",
+        embeds = {
+            {
+                title = tostring(account.Nickname) .. " • Account Stats",
+                description = "Automatic hourly account snapshot",
+                fields = fields,
+                footer = {
+                    text = "Asehole hub • v" .. HUB_VERSION .. " • Account Reporter"
+                },
+                timestamp = DateTime.now():ToIsoDate(),
+            }
+        }
+    }
+
+    local success, result = pcall(function()
+        return requestFunction({
+            Url = account.WebhookUrl,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = HttpService:JSONEncode(payload),
+        })
+    end)
+
+    return success, result
+end
+
+local function startAccountStatsReporter()
+    local account = ACCOUNT_REPORT_TARGETS[player.UserId]
+
+    if not account
+        or not isAccountReporterWebhookConfigured(account.WebhookUrl)
+        or not requestFunction
+    then
+        return
+    end
+
+    local environment = (getgenv and getgenv()) or _G
+    local reporterKey = "__ASEHOLE_ACCOUNT_REPORTER_" .. tostring(player.UserId)
+
+    if environment[reporterKey] then
+        return
+    end
+
+    environment[reporterKey] = true
+
+    task.spawn(function()
+        while true do
+            sendAccountStatsSnapshot(account)
+            task.wait(ACCOUNT_REPORT_INTERVAL)
+        end
+    end)
+end
+
+startAccountStatsReporter()
 
 local function sendDiscordWebhook(alertType)
     if discordWebhookUrl == "" then
