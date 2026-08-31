@@ -1,0 +1,73 @@
+name: Patch Account Targets v1.3.5
+
+on:
+  push:
+    paths:
+      - '.github/workflows/patch-account-targets-v135.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch account targets
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('AseholeHub.lua')
+          s = p.read_text(encoding='utf-8')
+
+          assert '-- ASEHOLE HUB v1.3.4' in s
+          assert 'local HUB_VERSION = "1.3.4"' in s
+          assert '[10383321970]' not in s
+          assert '[2608160542]' not in s
+
+          s = s.replace('-- ASEHOLE HUB v1.3.4', '-- ASEHOLE HUB v1.3.5', 1)
+          s = s.replace('local HUB_VERSION = "1.3.4"', 'local HUB_VERSION = "1.3.5"', 1)
+
+          anchor = '    [3725794499] = {\n        Nickname = "filip",\n'
+          start = s.index(anchor)
+          close = s.index('    },', start) + len('    },')
+
+          additions = '\n    [10383321970] = {\n        Nickname = "unl1ghtble",\n        WebhookUrl = "PASTE_UNL1GHTBLE_WEBHOOK_URL_HERE",\n    },\n    [2608160542] = {\n        Nickname = "jack",\n        WebhookUrl = "PASTE_JACK_WEBHOOK_URL_HERE",\n    },'
+          s = s[:close] + additions + s[close:]
+
+          assert '-- ASEHOLE HUB v1.3.5' in s
+          assert 'local HUB_VERSION = "1.3.5"' in s
+          assert '[10383321970]' in s and 'Nickname = "unl1ghtble"' in s
+          assert 'PASTE_UNL1GHTBLE_WEBHOOK_URL_HERE' in s
+          assert '[2608160542]' in s and 'Nickname = "jack"' in s
+          assert 'PASTE_JACK_WEBHOOK_URL_HERE' in s
+          assert 'local ACCOUNT_REPORT_INTERVAL = 3600' in s
+          assert 'startAccountStatsReporter()' in s
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Verify diff
+        shell: bash
+        run: |
+          git diff --check
+          grep -q 'local HUB_VERSION = "1.3.5"' AseholeHub.lua
+          grep -q '\[10383321970\]' AseholeHub.lua
+          grep -q 'Nickname = "unl1ghtble"' AseholeHub.lua
+          grep -q 'PASTE_UNL1GHTBLE_WEBHOOK_URL_HERE' AseholeHub.lua
+          grep -q '\[2608160542\]' AseholeHub.lua
+          grep -q 'Nickname = "jack"' AseholeHub.lua
+          grep -q 'PASTE_JACK_WEBHOOK_URL_HERE' AseholeHub.lua
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AseholeHub.lua
+          git diff --cached --check
+          git commit -m "Add two account reporter targets"
+          git push origin HEAD:${GITHUB_REF_NAME}
