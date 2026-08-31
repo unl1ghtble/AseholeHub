@@ -1,12 +1,12 @@
 -- ============================================================
--- ASEHOLE HUB v1.3.4
+-- ASEHOLE HUB v1.3.5
 -- ============================================================
 
 -- ============================
 -- CONFIG
 -- ============================
 
-local HUB_VERSION = "1.3.4"
+local HUB_VERSION = "1.3.5"
 local DEFAULT_TOOL_NAME = "Boxing Gloves"
 
 local TARGET_STATS = {
@@ -57,6 +57,14 @@ local ACCOUNT_REPORT_TARGETS = {
     [3725794499] = {
         Nickname = "filip",
         WebhookUrl = "https://discord.com/api/webhooks/1543236038728884396/ucb-4qraSP_Q5aS6u0jc7_l0tNnDc6w1fl9KR9paXr-q-egdtDUdDv4ldLN7flSNcuaY",
+    },
+    [10383321970] = {
+        Nickname = "unl1ghtble",
+        WebhookUrl = "PASTE_UNL1GHTBLE_WEBHOOK_URL_HERE",
+    },
+    [2608160542] = {
+        Nickname = "jack",
+        WebhookUrl = "PASTE_JACK_WEBHOOK_URL_HERE",
     },
 }
 
