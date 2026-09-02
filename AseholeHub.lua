@@ -1,13 +1,14 @@
 -- ============================================================
--- ASEHOLE HUB v1.3.5
+-- ASEHOLE HUB v1.3.6
 -- ============================================================
 
 -- ============================
 -- CONFIG
 -- ============================
 
-local HUB_VERSION = "1.3.5"
+local HUB_VERSION = "1.3.6"
 local DEFAULT_TOOL_NAME = "Boxing Gloves"
+local AUTO_BUY_INTERVAL = 0.25
 
 local TARGET_STATS = {
     {Internal = "AG",            Display = "Agility"},
@@ -123,6 +124,15 @@ local WebhookTab = Window:CreateTab("Webhook", 4483362458)
 local autoUseEnabled = false
 local targetToolName = DEFAULT_TOOL_NAME
 local autoUseThread = nil
+
+-- Auto Buy
+local buyItemName = ""
+local autoBuyContinuousEnabled = false
+local autoBuyOnceEnabled = false
+local autoBuyContinuousThread = nil
+local autoBuyOnceThread = nil
+local AutoBuyContinuousToggle = nil
+local AutoBuyOnceToggle = nil
 
 -- Prompts
 local autoPromptEnabled = false
@@ -435,6 +445,91 @@ local function canRunAutomation()
     end
 
     return true
+end
+
+-- ============================================================
+-- AUTO BUY
+-- ============================================================
+
+local function findNearestPurchaseClickDetector(itemName)
+    local map = workspace:FindFirstChild("Map")
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not map or not root then return nil end
+    local wanted = normalizeName(trim(itemName or ""))
+    if wanted == "" then return nil end
+    local nearestDetector = nil
+    local nearestDistance = math.huge
+    for _, obj in ipairs(map:GetDescendants()) do
+        if normalizeName(obj.Name) == wanted then
+            local detector = obj:FindFirstChildWhichIsA("ClickDetector", true)
+            if detector then
+                local position = nil
+                local detectorParent = detector.Parent
+                if detectorParent and detectorParent:IsA("BasePart") then
+                    position = detectorParent.Position
+                elseif obj:IsA("BasePart") then
+                    position = obj.Position
+                elseif obj:IsA("Model") then
+                    local ok, pivot = pcall(function() return obj:GetPivot() end)
+                    if ok and pivot then position = pivot.Position end
+                else
+                    local part = obj:FindFirstChildWhichIsA("BasePart", true)
+                    position = part and part.Position or nil
+                end
+                if position then
+                    local distance = (position - root.Position).Magnitude
+                    if distance < nearestDistance then
+                        nearestDistance = distance
+                        nearestDetector = detector
+                    end
+                end
+            end
+        end
+    end
+    return nearestDetector
+end
+
+local function buyNearestItemOnce()
+    if type(fireclickdetector) ~= "function" then return false end
+    local detector = findNearestPurchaseClickDetector(buyItemName)
+    if not detector then return false end
+    return pcall(function() fireclickdetector(detector) end)
+end
+
+local function startAutoBuyContinuous()
+    if autoBuyContinuousThread then return end
+    autoBuyContinuousThread = task.spawn(function()
+        while autoBuyContinuousEnabled do
+            if canRunAutomation() then
+                buyNearestItemOnce()
+            end
+            task.wait(AUTO_BUY_INTERVAL)
+        end
+        autoBuyContinuousThread = nil
+    end)
+end
+
+local function stopAutoBuyContinuous()
+    autoBuyContinuousEnabled = false
+end
+
+local function startAutoBuyOnce()
+    if autoBuyOnceThread then return end
+    autoBuyOnceThread = task.spawn(function()
+        while autoBuyOnceEnabled do
+            if canRunAutomation() then
+                local purchased = buyNearestItemOnce()
+                if purchased then
+                    autoBuyOnceEnabled = false
+                    if AutoBuyOnceToggle then AutoBuyOnceToggle:Set(false) end
+                    break
+                end
+            end
+            task.wait(AUTO_BUY_INTERVAL)
+        end
+        autoBuyOnceThread = nil
+    end)
 end
 
 -- ============================================================
@@ -1930,6 +2025,63 @@ AutoUseTab:CreateButton({
         end
     end,
 })
+
+AutoUseTab:CreateInput({
+    Name = "Buy Item Name",
+    PlaceholderText = "e.g. Boxing Gloves",
+    RemoveTextAfterFocusLost = false,
+    CurrentValue = "",
+    Flag = "AutoBuyItemName",
+    Callback = function(text)
+        buyItemName = tostring(text or "")
+    end,
+})
+
+AutoBuyContinuousToggle = AutoUseTab:CreateToggle({
+    Name = "Auto Buy Continuous",
+    CurrentValue = false,
+    Flag = "AutoBuyContinuous",
+    Callback = function(value)
+        autoBuyContinuousEnabled = value
+
+        if value then
+            if autoBuyOnceEnabled then
+                autoBuyOnceEnabled = false
+
+                if AutoBuyOnceToggle then
+                    AutoBuyOnceToggle:Set(false)
+                end
+            end
+
+            startAutoBuyContinuous()
+        else
+            stopAutoBuyContinuous()
+        end
+    end,
+})
+
+AutoBuyOnceToggle = AutoUseTab:CreateToggle({
+    Name = "Auto Buy Once",
+    CurrentValue = false,
+    Flag = "AutoBuyOnce",
+    Callback = function(value)
+        autoBuyOnceEnabled = value
+
+        if value then
+            if autoBuyContinuousEnabled then
+                autoBuyContinuousEnabled = false
+
+                if AutoBuyContinuousToggle then
+                    AutoBuyContinuousToggle:Set(false)
+                end
+            end
+
+            startAutoBuyOnce()
+        end
+    end,
+})
+
+AutoUseTab:CreateLabel("Auto Buy uses the nearest matching ClickDetector under workspace.Map.")
 
 -- ============================================================
 -- PROMPT UI
