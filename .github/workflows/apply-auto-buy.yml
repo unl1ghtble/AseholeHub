@@ -1,0 +1,300 @@
+name: Apply Auto Buy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-auto-buy.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch AseholeHub.lua
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("AseholeHub.lua")
+          source = path.read_text(encoding="utf-8")
+
+          if 'local HUB_VERSION = "1.3.6"' in source and 'Name = "Auto Buy Continuous"' in source:
+              print("Auto Buy already applied; nothing to do.")
+              raise SystemExit(0)
+
+          def replace_once(old, new, label):
+              global source
+              if old not in source:
+                  raise SystemExit(f"Missing patch anchor: {label}")
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              "-- ASEHOLE HUB v1.3.5",
+              "-- ASEHOLE HUB v1.3.6",
+              "version header",
+          )
+          replace_once(
+              'local HUB_VERSION = "1.3.5"',
+              'local HUB_VERSION = "1.3.6"',
+              "HUB_VERSION",
+          )
+          replace_once(
+              'local DEFAULT_TOOL_NAME = "Boxing Gloves"\n',
+              'local DEFAULT_TOOL_NAME = "Boxing Gloves"\nlocal AUTO_BUY_INTERVAL = 0.25\n',
+              "auto buy interval",
+          )
+
+          replace_once(
+              "local autoUseThread = nil\n",
+              """local autoUseThread = nil
+
+-- Auto Buy
+local buyItemName = ""
+local autoBuyContinuousEnabled = false
+local autoBuyOnceEnabled = false
+local autoBuyContinuousThread = nil
+local autoBuyOnceThread = nil
+local AutoBuyContinuousToggle = nil
+local AutoBuyOnceToggle = nil
+""",
+              "Auto Use state",
+          )
+
+          auto_buy_logic = r'''-- ============================================================
+-- AUTO BUY
+-- ============================================================
+
+local function getPurchaseObjectPosition(obj, detector)
+    local detectorParent = detector and detector.Parent
+
+    if detectorParent and detectorParent:IsA("BasePart") then
+        return detectorParent.Position
+    end
+
+    if obj:IsA("BasePart") then
+        return obj.Position
+    end
+
+    if obj:IsA("Model") then
+        local success, pivot = pcall(function()
+            return obj:GetPivot()
+        end)
+
+        if success and pivot then
+            return pivot.Position
+        end
+    end
+
+    local part = obj:FindFirstChildWhichIsA("BasePart", true)
+    return part and part.Position or nil
+end
+
+local function findNearestPurchaseClickDetector(itemName)
+    local map = workspace:FindFirstChild("Map")
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+
+    if not map or not root then
+        return nil
+    end
+
+    local wanted = normalizeName(trim(itemName or ""))
+
+    if wanted == "" then
+        return nil
+    end
+
+    local nearestDetector = nil
+    local nearestDistance = math.huge
+
+    for _, obj in ipairs(map:GetDescendants()) do
+        if normalizeName(obj.Name) == wanted then
+            local detector = obj:FindFirstChildWhichIsA("ClickDetector", true)
+
+            if detector then
+                local position = getPurchaseObjectPosition(obj, detector)
+
+                if position then
+                    local distance = (position - root.Position).Magnitude
+
+                    if distance < nearestDistance then
+                        nearestDistance = distance
+                        nearestDetector = detector
+                    end
+                end
+            end
+        end
+    end
+
+    return nearestDetector
+end
+
+local function buyNearestItemOnce()
+    if type(fireclickdetector) ~= "function" then
+        return false
+    end
+
+    local detector = findNearestPurchaseClickDetector(buyItemName)
+
+    if not detector then
+        return false
+    end
+
+    return pcall(function()
+        fireclickdetector(detector)
+    end)
+end
+
+local function startAutoBuyContinuous()
+    if autoBuyContinuousThread then
+        return
+    end
+
+    autoBuyContinuousThread = task.spawn(function()
+        while autoBuyContinuousEnabled do
+            if canRunAutomation() then
+                buyNearestItemOnce()
+            end
+
+            task.wait(AUTO_BUY_INTERVAL)
+        end
+
+        autoBuyContinuousThread = nil
+    end)
+end
+
+local function stopAutoBuyContinuous()
+    autoBuyContinuousEnabled = false
+end
+
+local function startAutoBuyOnce()
+    if autoBuyOnceThread then
+        return
+    end
+
+    autoBuyOnceThread = task.spawn(function()
+        while autoBuyOnceEnabled do
+            if canRunAutomation() then
+                local purchased = buyNearestItemOnce()
+
+                if purchased then
+                    autoBuyOnceEnabled = false
+
+                    if AutoBuyOnceToggle then
+                        AutoBuyOnceToggle:Set(false)
+                    end
+
+                    break
+                end
+            end
+
+            task.wait(AUTO_BUY_INTERVAL)
+        end
+
+        autoBuyOnceThread = nil
+    end)
+end
+
+'''
+
+          anti_afk_marker = """-- ============================================================
+-- ANTI AFK
+-- ============================================================
+"""
+          replace_once(
+              anti_afk_marker,
+              auto_buy_logic + anti_afk_marker,
+              "Auto Buy logic insertion",
+          )
+
+          auto_buy_ui = r'''AutoUseTab:CreateInput({
+    Name = "Buy Item Name",
+    PlaceholderText = "e.g. Boxing Gloves",
+    RemoveTextAfterFocusLost = false,
+    CurrentValue = "",
+    Flag = "AutoBuyItemName",
+    Callback = function(text)
+        buyItemName = tostring(text or "")
+    end,
+})
+
+AutoBuyContinuousToggle = AutoUseTab:CreateToggle({
+    Name = "Auto Buy Continuous",
+    CurrentValue = false,
+    Flag = "AutoBuyContinuous",
+    Callback = function(value)
+        autoBuyContinuousEnabled = value
+
+        if value then
+            if autoBuyOnceEnabled then
+                autoBuyOnceEnabled = false
+
+                if AutoBuyOnceToggle then
+                    AutoBuyOnceToggle:Set(false)
+                end
+            end
+
+            startAutoBuyContinuous()
+        else
+            stopAutoBuyContinuous()
+        end
+    end,
+})
+
+AutoBuyOnceToggle = AutoUseTab:CreateToggle({
+    Name = "Auto Buy Once",
+    CurrentValue = false,
+    Flag = "AutoBuyOnce",
+    Callback = function(value)
+        autoBuyOnceEnabled = value
+
+        if value then
+            if autoBuyContinuousEnabled then
+                autoBuyContinuousEnabled = false
+
+                if AutoBuyContinuousToggle then
+                    AutoBuyContinuousToggle:Set(false)
+                end
+            end
+
+            startAutoBuyOnce()
+        end
+    end,
+})
+
+AutoUseTab:CreateLabel("Auto Buy uses the nearest matching ClickDetector under workspace.Map.")
+
+'''
+
+          prompt_ui_marker = """-- ============================================================
+-- PROMPT UI
+-- ============================================================
+"""
+          replace_once(
+              prompt_ui_marker,
+              auto_buy_ui + prompt_ui_marker,
+              "Auto Buy UI insertion",
+          )
+
+          path.write_text(source, encoding="utf-8")
+          print("Patched AseholeHub.lua for v1.3.6 Auto Buy.")
+
+      - name: Commit Auto Buy
+        shell: bash
+        run: |
+          if git diff --quiet -- AseholeHub.lua; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AseholeHub.lua
+          git commit -m "feat: add Auto Buy controls"
+          git push origin HEAD:main
