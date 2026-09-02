@@ -1,0 +1,41 @@
+name: Auto Buy Regression
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  auto-buy-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Auto Buy structure
+        shell: python
+        run: |
+          from pathlib import Path
+
+          source = Path("AseholeHub.lua").read_text(encoding="utf-8")
+
+          checks = {
+              "version bumped to 1.3.6": 'local HUB_VERSION = "1.3.6"' in source,
+              "buy item input": 'Name = "Buy Item Name"' in source and 'Flag = "AutoBuyItemName"' in source,
+              "continuous toggle": 'Name = "Auto Buy Continuous"' in source and 'Flag = "AutoBuyContinuous"' in source,
+              "once toggle": 'Name = "Auto Buy Once"' in source and 'Flag = "AutoBuyOnce"' in source,
+              "nearest detector helper": 'local function findNearestPurchaseClickDetector' in source,
+              "recursive map search": 'map:GetDescendants()' in source and 'FindFirstChildWhichIsA("ClickDetector", true)' in source,
+              "case insensitive matching": 'normalizeName(obj.Name) == wanted' in source,
+              "distance selection": 'distance < nearestDistance' in source,
+              "click detector firing": 'fireclickdetector(detector)' in source,
+              "continuous worker": 'while autoBuyContinuousEnabled do' in source,
+              "automation priority respected": 'if canRunAutomation() then' in source,
+              "once mode stops after success": 'autoBuyOnceEnabled = false' in source and 'AutoBuyOnceToggle:Set(false)' in source,
+              "modes are mutually exclusive": 'AutoBuyContinuousToggle:Set(false)' in source and 'AutoBuyOnceToggle:Set(false)' in source,
+          }
+
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(("PASS" if ok else "FAIL") + ": " + name)
+
+          if failed:
+              raise SystemExit("Missing Auto Buy requirements: " + ", ".join(failed))
