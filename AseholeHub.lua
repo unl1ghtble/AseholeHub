@@ -1,14 +1,16 @@
 -- ============================================================
--- ASEHOLE HUB v1.3.7
+-- ASEHOLE HUB v1.3.8
 -- ============================================================
 
 -- ============================
 -- CONFIG
 -- ============================
 
-local HUB_VERSION = "1.3.7"
+local HUB_VERSION = "1.3.8"
 local DEFAULT_TOOL_NAME = "Boxing Gloves"
 local AUTO_BUY_INTERVAL = 0.25
+local AUTO_BOXING_DEFAULT_M1_PULSE = 0.35
+local GAME_M1_SOURCE = "ReplicatedStorage.Modules.Client.Keybinds.functions.m1"
 
 local TARGET_STATS = {
     {Internal = "AG",            Display = "Agility"},
@@ -134,9 +136,11 @@ local autoBuyOnceThread = nil
 local AutoBuyContinuousToggle = nil
 local AutoBuyOnceToggle = nil
 
--- Auto Buy Boxing Gloves
-local autoBuyBoxingGlovesEnabled = false
-local autoBuyBoxingGlovesThread = nil
+-- Auto Boxing
+local autoBoxingEnabled = false
+local autoBoxingThread = nil
+local autoBoxingM1Pulse = AUTO_BOXING_DEFAULT_M1_PULSE
+local autoBoxingM1State = nil
 
 -- Prompts
 local autoPromptEnabled = false
@@ -541,7 +545,7 @@ local function startAutoBuyOnce()
 end
 
 -- ============================================================
--- AUTO BUY BOXING GLOVES
+-- AUTO BOXING
 -- ============================================================
 
 local function hasActiveBoxingGloves()
@@ -581,27 +585,171 @@ local function ensureBoxingGlovesActive()
     return false
 end
 
-local function startAutoBuyBoxingGloves()
-    if autoBuyBoxingGlovesThread then
+local function equipToolOnly(tool)
+    if not tool then
+        return false
+    end
+
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        return false
+    end
+
+    if tool.Parent ~= character then
+        humanoid:EquipTool(tool)
+        task.wait(0.05)
+    end
+
+    return tool.Parent == character
+end
+
+local function getFunctionSource(fn)
+    local ok, source = pcall(function()
+        return debug.info(fn, "s")
+    end)
+
+    return ok and tostring(source) or ""
+end
+
+local function getFunctionUpvalues(fn)
+    if type(getupvalues) ~= "function" then
+        return {}
+    end
+
+    local ok, values = pcall(function()
+        return getupvalues(fn)
+    end)
+
+    if ok and type(values) == "table" then
+        return values
+    end
+
+    return {}
+end
+
+local function findGameM1State()
+    if type(getconnections) ~= "function" then
+        return nil
+    end
+
+    local mouse = player:GetMouse()
+    local ok, connections = pcall(function()
+        return getconnections(mouse.Button1Down)
+    end)
+
+    if not ok or type(connections) ~= "table" then
+        return nil
+    end
+
+    for _, connection in ipairs(connections) do
+        local fn = connection.Function
+
+        if type(fn) == "function"
+            and getFunctionSource(fn) == GAME_M1_SOURCE
+        then
+            for _, value in pairs(getFunctionUpvalues(fn)) do
+                if type(value) == "table"
+                    and type(value.hold) == "boolean"
+                    and type(value.start) == "function"
+                    and getFunctionSource(value.start) == GAME_M1_SOURCE
+                then
+                    return value
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function pulseGameM1()
+    local state = autoBoxingM1State
+
+    if type(state) ~= "table"
+        or type(state.hold) ~= "boolean"
+        or type(state.start) ~= "function"
+    then
+        state = findGameM1State()
+        autoBoxingM1State = state
+    end
+
+    if not state then
+        return false
+    end
+
+    state.hold = true
+
+    task.delay(autoBoxingM1Pulse, function()
+        state.hold = false
+    end)
+
+    task.spawn(function()
+        local ok = pcall(function()
+            state.start()
+        end)
+
+        if not ok then
+            state.hold = false
+
+            if autoBoxingM1State == state then
+                autoBoxingM1State = nil
+            end
+        end
+    end)
+
+    return true
+end
+
+local function startAutoBoxing()
+    if autoBoxingThread then
         return
     end
 
-    autoBuyBoxingGlovesThread = task.spawn(function()
-        while autoBuyBoxingGlovesEnabled do
+    autoBoxingThread = task.spawn(function()
+        while autoBoxingEnabled do
+            local waitTime = AUTO_BUY_INTERVAL
+
             if canRunAutomation() then
-                ensureBoxingGlovesActive()
+                if not hasActiveBoxingGloves() then
+                    ensureBoxingGlovesActive()
+                else
+                    local combatTool = findToolByName("Combat")
+
+                    if combatTool and equipToolOnly(combatTool) then
+                        if pulseGameM1() then
+                            waitTime = autoBoxingM1Pulse
+                        end
+                    end
+                end
             end
 
-            task.wait(AUTO_BUY_INTERVAL)
+            task.wait(waitTime)
         end
 
-        autoBuyBoxingGlovesThread = nil
+        if autoBoxingM1State then
+            autoBoxingM1State.hold = false
+        end
+
+        autoBoxingM1State = nil
+        autoBoxingThread = nil
     end)
 end
 
-local function stopAutoBuyBoxingGloves()
-    autoBuyBoxingGlovesEnabled = false
+local function stopAutoBoxing()
+    autoBoxingEnabled = false
+
+    if autoBoxingM1State then
+        autoBoxingM1State.hold = false
+    end
+
+    autoBoxingM1State = nil
 end
+
+player.CharacterAdded:Connect(function()
+    autoBoxingM1State = nil
+end)
 
 -- ============================================================
 -- ANTI AFK
@@ -2155,21 +2303,37 @@ AutoBuyOnceToggle = AutoUseTab:CreateToggle({
 AutoUseTab:CreateLabel("Auto Buy uses the nearest matching ClickDetector under workspace.Map.")
 
 AutoUseTab:CreateToggle({
-    Name = "Auto Buy Boxing Gloves",
+    Name = "Auto Boxing",
     CurrentValue = false,
-    Flag = "AutoBuyBoxingGloves",
+    Flag = "AutoBoxing",
     Callback = function(value)
-        autoBuyBoxingGlovesEnabled = value
+        autoBoxingEnabled = value
 
         if value then
-            startAutoBuyBoxingGloves()
+            startAutoBoxing()
         else
-            stopAutoBuyBoxingGloves()
+            stopAutoBoxing()
         end
     end,
 })
 
-AutoUseTab:CreateLabel("Buys and activates Boxing Gloves only when the active body folder is missing.")
+AutoUseTab:CreateSlider({
+    Name = "M1 Pulse",
+    Range = {0.05, 1},
+    Increment = 0.01,
+    Suffix = "s",
+    CurrentValue = 0.35,
+    Flag = "AutoBoxingM1Pulse",
+    Callback = function(value)
+        autoBoxingM1Pulse = math.clamp(
+            tonumber(value) or AUTO_BOXING_DEFAULT_M1_PULSE,
+            0.05,
+            1
+        )
+    end,
+})
+
+AutoUseTab:CreateLabel("Auto Boxing keeps Boxing Gloves active, equips Combat, and uses the game's M1 function.")
 
 -- ============================================================
 -- PROMPT UI
