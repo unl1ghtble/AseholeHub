@@ -1,0 +1,48 @@
+name: Auto Boxing Cycle Regression
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  auto-boxing-cycle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify tested Auto Boxing cycle
+        shell: python
+        run: |
+          from pathlib import Path
+
+          source = Path("AseholeHub.lua").read_text(encoding="utf-8")
+
+          checks = {
+              "version": 'local HUB_VERSION = "1.3.9"',
+              "fixed hold": "local AUTO_BOXING_M1_HOLD_DURATION = 0.35",
+              "pulse generation": "local autoBoxingPulseGeneration = 0",
+              "hold true": "state.hold = true",
+              "fixed hold wait": "task.wait(AUTO_BOXING_M1_HOLD_DURATION)",
+              "generation release": "if thisPulse == autoBoxingPulseGeneration then",
+              "slider min": "Range = {0.35, 1.5}",
+              "slider flag": 'Flag = "AutoBoxingM1Pulse"',
+              "interval remaining": "local remaining = autoBoxingM1Pulse - elapsed",
+          }
+
+          missing = [name for name, needle in checks.items() if needle not in source]
+          if missing:
+              raise SystemExit("Missing Auto Boxing cycle checks: " + ", ".join(missing))
+
+          pulse_start = source.index("local function pulseGameM1()")
+          worker_start = source.index("local function startAutoBoxing()", pulse_start)
+          pulse_block = source[pulse_start:worker_start]
+
+          forbidden = [
+              "autoBoxingM1State = nil",
+              "if not ok then",
+          ]
+          bad = [needle for needle in forbidden if needle in pulse_block]
+          if bad:
+              raise SystemExit("Pulse still invalidates proven M1 state: " + ", ".join(bad))
+
+          print("Auto Boxing tested-cycle structure verified")
