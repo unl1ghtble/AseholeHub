@@ -1,15 +1,16 @@
 -- ============================================================
--- ASEHOLE HUB v1.3.8
+-- ASEHOLE HUB v1.3.9
 -- ============================================================
 
 -- ============================
 -- CONFIG
 -- ============================
 
-local HUB_VERSION = "1.3.8"
+local HUB_VERSION = "1.3.9"
 local DEFAULT_TOOL_NAME = "Boxing Gloves"
 local AUTO_BUY_INTERVAL = 0.25
 local AUTO_BOXING_DEFAULT_M1_PULSE = 0.35
+local AUTO_BOXING_M1_HOLD_DURATION = 0.35
 local GAME_M1_SOURCE = "ReplicatedStorage.Modules.Client.Keybinds.functions.m1"
 
 local TARGET_STATS = {
@@ -141,6 +142,7 @@ local autoBoxingEnabled = false
 local autoBoxingThread = nil
 local autoBoxingM1Pulse = AUTO_BOXING_DEFAULT_M1_PULSE
 local autoBoxingM1State = nil
+local autoBoxingPulseGeneration = 0
 
 -- Prompts
 local autoPromptEnabled = false
@@ -679,25 +681,22 @@ local function pulseGameM1()
         return false
     end
 
+    autoBoxingPulseGeneration += 1
+    local thisPulse = autoBoxingPulseGeneration
+
     state.hold = true
 
-    task.delay(autoBoxingM1Pulse, function()
-        state.hold = false
-    end)
-
     task.spawn(function()
-        local ok = pcall(function()
+        pcall(function()
             state.start()
         end)
-
-        if not ok then
-            state.hold = false
-
-            if autoBoxingM1State == state then
-                autoBoxingM1State = nil
-            end
-        end
     end)
+
+    task.wait(AUTO_BOXING_M1_HOLD_DURATION)
+
+    if thisPulse == autoBoxingPulseGeneration then
+        state.hold = false
+    end
 
     return true
 end
@@ -709,7 +708,7 @@ local function startAutoBoxing()
 
     autoBoxingThread = task.spawn(function()
         while autoBoxingEnabled do
-            local waitTime = AUTO_BUY_INTERVAL
+            local usedPunchInterval = false
 
             if canRunAutomation() then
                 if not hasActiveBoxingGloves() then
@@ -718,15 +717,28 @@ local function startAutoBoxing()
                     local combatTool = findToolByName("Combat")
 
                     if combatTool and equipToolOnly(combatTool) then
+                        local punchStartedAt = os.clock()
+
                         if pulseGameM1() then
-                            waitTime = autoBoxingM1Pulse
+                            local elapsed = os.clock() - punchStartedAt
+                            local remaining = autoBoxingM1Pulse - elapsed
+
+                            if remaining > 0 then
+                                task.wait(remaining)
+                            end
+
+                            usedPunchInterval = true
                         end
                     end
                 end
             end
 
-            task.wait(waitTime)
+            if not usedPunchInterval then
+                task.wait(AUTO_BUY_INTERVAL)
+            end
         end
+
+        autoBoxingPulseGeneration += 1
 
         if autoBoxingM1State then
             autoBoxingM1State.hold = false
@@ -739,6 +751,7 @@ end
 
 local function stopAutoBoxing()
     autoBoxingEnabled = false
+    autoBoxingPulseGeneration += 1
 
     if autoBoxingM1State then
         autoBoxingM1State.hold = false
@@ -748,6 +761,14 @@ local function stopAutoBoxing()
 end
 
 player.CharacterAdded:Connect(function()
+    autoBoxingPulseGeneration += 1
+
+    if autoBoxingM1State then
+        pcall(function()
+            autoBoxingM1State.hold = false
+        end)
+    end
+
     autoBoxingM1State = nil
 end)
 
@@ -2319,7 +2340,7 @@ AutoUseTab:CreateToggle({
 
 AutoUseTab:CreateSlider({
     Name = "M1 Pulse",
-    Range = {0.05, 1},
+    Range = {0.35, 1.5},
     Increment = 0.01,
     Suffix = "s",
     CurrentValue = 0.35,
@@ -2327,13 +2348,14 @@ AutoUseTab:CreateSlider({
     Callback = function(value)
         autoBoxingM1Pulse = math.clamp(
             tonumber(value) or AUTO_BOXING_DEFAULT_M1_PULSE,
-            0.05,
-            1
+            0.35,
+            1.5
         )
     end,
 })
 
 AutoUseTab:CreateLabel("Auto Boxing keeps Boxing Gloves active, equips Combat, and uses the game's M1 function.")
+AutoUseTab:CreateLabel("M1 hold stays fixed at 0.35s; M1 Pulse controls time between punch starts.")
 
 -- ============================================================
 -- PROMPT UI
