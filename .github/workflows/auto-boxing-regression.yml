@@ -1,0 +1,44 @@
+name: Auto Boxing Regression
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  auto-boxing-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Auto Boxing structure
+        shell: python
+        run: |
+          from pathlib import Path
+
+          source = Path("AseholeHub.lua").read_text(encoding="utf-8")
+
+          checks = {
+              "version bumped to 1.3.8": 'local HUB_VERSION = "1.3.8"' in source,
+              "auto boxing toggle": 'Name = "Auto Boxing"' in source and 'Flag = "AutoBoxing"' in source,
+              "old boxing toggle removed": 'Name = "Auto Buy Boxing Gloves"' not in source,
+              "m1 pulse slider": 'Name = "M1 Pulse"' in source and 'Flag = "AutoBoxingM1Pulse"' in source,
+              "m1 pulse range": 'Range = {0.05, 1}' in source,
+              "m1 pulse default": 'CurrentValue = 0.35' in source,
+              "game m1 state finder": 'local function findGameM1State' in source,
+              "button1 connection trace": 'getconnections(mouse.Button1Down)' in source,
+              "game m1 source filter": 'ReplicatedStorage.Modules.Client.Keybinds.functions.m1' in source,
+              "game m1 call": 'state.start()' in source,
+              "m1 hold true": 'state.hold = true' in source,
+              "m1 hold false": 'state.hold = false' in source,
+              "combat equip": 'findToolByName("Combat")' in source,
+              "gloves still ensured": 'ensureBoxingGlovesActive()' in source,
+              "combined worker": 'while autoBoxingEnabled do' in source,
+              "automation gate": 'if canRunAutomation() then' in source,
+          }
+
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(("PASS" if ok else "FAIL") + ": " + name)
+
+          if failed:
+              raise SystemExit("Missing Auto Boxing requirements: " + ", ".join(failed))
