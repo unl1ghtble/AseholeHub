@@ -1,12 +1,12 @@
 -- ============================================================
--- ASEHOLE HUB v1.3.6
+-- ASEHOLE HUB v1.3.7
 -- ============================================================
 
 -- ============================
 -- CONFIG
 -- ============================
 
-local HUB_VERSION = "1.3.6"
+local HUB_VERSION = "1.3.7"
 local DEFAULT_TOOL_NAME = "Boxing Gloves"
 local AUTO_BUY_INTERVAL = 0.25
 
@@ -133,6 +133,10 @@ local autoBuyContinuousThread = nil
 local autoBuyOnceThread = nil
 local AutoBuyContinuousToggle = nil
 local AutoBuyOnceToggle = nil
+
+-- Auto Buy Boxing Gloves
+local autoBuyBoxingGlovesEnabled = false
+local autoBuyBoxingGlovesThread = nil
 
 -- Prompts
 local autoPromptEnabled = false
@@ -490,11 +494,15 @@ local function findNearestPurchaseClickDetector(itemName)
     return nearestDetector
 end
 
-local function buyNearestItemOnce()
+local function buyNamedItemOnce(itemName)
     if type(fireclickdetector) ~= "function" then return false end
-    local detector = findNearestPurchaseClickDetector(buyItemName)
+    local detector = findNearestPurchaseClickDetector(itemName)
     if not detector then return false end
     return pcall(function() fireclickdetector(detector) end)
+end
+
+local function buyNearestItemOnce()
+    return buyNamedItemOnce(buyItemName)
 end
 
 local function startAutoBuyContinuous()
@@ -530,6 +538,69 @@ local function startAutoBuyOnce()
         end
         autoBuyOnceThread = nil
     end)
+end
+
+-- ============================================================
+-- AUTO BUY BOXING GLOVES
+-- ============================================================
+
+local function hasActiveBoxingGloves()
+    local character = player.Character
+    if not character then
+        return false
+    end
+
+    local activeFolder = character:FindFirstChild("Boxing Gloves")
+    return activeFolder ~= nil and activeFolder:IsA("Folder")
+end
+
+local function ensureBoxingGlovesActive()
+    if hasActiveBoxingGloves() then
+        return true
+    end
+
+    local glovesTool = findToolByName("Boxing Gloves")
+
+    if glovesTool then
+        equipAndActivateTool(glovesTool)
+        return false
+    end
+
+    local purchased = buyNamedItemOnce("Boxing Gloves")
+
+    if purchased then
+        task.wait(AUTO_BUY_INTERVAL)
+
+        glovesTool = findToolByName("Boxing Gloves")
+
+        if glovesTool then
+            equipAndActivateTool(glovesTool)
+        end
+    end
+
+    return false
+end
+
+local function startAutoBuyBoxingGloves()
+    if autoBuyBoxingGlovesThread then
+        return
+    end
+
+    autoBuyBoxingGlovesThread = task.spawn(function()
+        while autoBuyBoxingGlovesEnabled do
+            if canRunAutomation() then
+                ensureBoxingGlovesActive()
+            end
+
+            task.wait(AUTO_BUY_INTERVAL)
+        end
+
+        autoBuyBoxingGlovesThread = nil
+    end)
+end
+
+local function stopAutoBuyBoxingGloves()
+    autoBuyBoxingGlovesEnabled = false
 end
 
 -- ============================================================
@@ -2082,6 +2153,23 @@ AutoBuyOnceToggle = AutoUseTab:CreateToggle({
 })
 
 AutoUseTab:CreateLabel("Auto Buy uses the nearest matching ClickDetector under workspace.Map.")
+
+AutoUseTab:CreateToggle({
+    Name = "Auto Buy Boxing Gloves",
+    CurrentValue = false,
+    Flag = "AutoBuyBoxingGloves",
+    Callback = function(value)
+        autoBuyBoxingGlovesEnabled = value
+
+        if value then
+            startAutoBuyBoxingGloves()
+        else
+            stopAutoBuyBoxingGloves()
+        end
+    end,
+})
+
+AutoUseTab:CreateLabel("Buys and activates Boxing Gloves only when the active body folder is missing.")
 
 -- ============================================================
 -- PROMPT UI
